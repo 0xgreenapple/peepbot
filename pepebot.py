@@ -1,7 +1,7 @@
 """
 peepbot main runner
 ~~~~~~~~~~~~~~~~~~~
-starter of the pepe bot for discord py
+starter of the peep bot for discord py
 that start the bot and connect to discord gateway.
 :copyright: (c) xgreenapple
 :license: MIT.
@@ -40,6 +40,7 @@ from handler.database import create_database_pool
 """this is the main file that run the bot"""
 log = logging.getLogger(__name__)
 
+
 # class bot the main code
 class pepebot(commands.Bot):
     """Sussy-bot v0.0.2a Interface
@@ -55,7 +56,7 @@ class pepebot(commands.Bot):
         allowed_mentions = discord.AllowedMentions(roles=True, everyone=False, users=True)
         self.ready = False
         self.statues = cycle(
-            ["pepe"])
+            ["peep"])
         super().__init__(
 
             command_prefix=self.get_command_prefix,
@@ -81,13 +82,10 @@ class pepebot(commands.Bot):
         self.spam_count = Counter()
         self.version = "0.0.1a"
         self.owner_id = 888058231094665266
-        self.support_guild = 939208771929014372
-        self.message_prefix_s = "Sussy bot"
-        self.changelog = "https://discord.gg/wC37kY3qwH"
-        self.dashboard = "https://sussybot.xyz"
-        self.bot_user_agent = "Sussybot (Discord Bot)"
+        self.message_prefix_s = "peep bot"
+        self.bot_user_agent = "pepe (Discord Bot)"
         self.user_agent = (
-            "Sussybot "
+            "peep "
             f"Python/{python_version()} "
             f"aiohttp/{aiohttp.__version__}"
             f"discord.py/{discord.__version__}"
@@ -117,13 +115,11 @@ class pepebot(commands.Bot):
         self.file_emoji = '<:icons8document100:975326725229641781>'
         self.moderator_emoji = "<:icons8protect100:975326725502296104>"
 
-
         self.db = self.database = self.database_connection_pool = None
         self.connected_to_database = asyncio.Event()
         self.connected_to_database.set()
 
     async def setup_hook(self) -> None:
-
         self.aiohttp_session = aiohttp.ClientSession(loop=self.loop)
         self.console_log("client session start")
         self.bot_app_info = await self.application_info()
@@ -140,14 +136,10 @@ class pepebot(commands.Bot):
         for cog in COGS:
             await self.load_extension(f"cogs.{cog}")
             self.console_log(f"{cog} loaded ")
-
-        self.tree.copy_global_to(guild=discord.Object(self.support_guild))
-        await self.tree.sync(guild=discord.Object(self.support_guild))
         self.console_log("setup hook complete")
 
     # setup database and create tables
     async def connect_to_database(self):
-        print('connecto to database')
         if self.database_connection_pool:
             return
         if self.connected_to_database.is_set():
@@ -159,7 +151,6 @@ class pepebot(commands.Bot):
 
     # setup database and create tables
     async def initialize_database(self):
-        print('dataase intialzie')
         await self.connect_to_database()
         await self.db.execute("CREATE SCHEMA IF NOT EXISTS test")
         await self.db.execute("DROP TABLE IF EXISTS test.duel")
@@ -172,12 +163,13 @@ class pepebot(commands.Bot):
                 member_ready  boolean DEFAULT FALSE,
                 message_id    BIGINT NOT NULL,
                 PRIMARY KEY	  (message_id),
-                user1_likes   BIGINT,
-                user2_likes   BIGINT,
-                img1_id       BIGINT,
-                img2_id       BIGINT
+                r_user_ready       boolean DEFAULT FALSE,
+                r_member_ready      boolean DEFAULT FALSE,
+                img2_id       BIGINT,
+                meme_id       TEXT
             )
         """)
+
     def console_log(self, message):
         print(f"[{datetime.datetime.now().strftime(r'%D %I:%M %p')}] > {self.user} > {message}")
 
@@ -223,7 +215,7 @@ class pepebot(commands.Bot):
 
     # load the prefix on guild join
     async def on_guild_join(self, guild):  # when the bot joins the guild
-       print(guild)
+        print(guild)
 
     # pop the guild prefix on leaving from the guild
     async def on_guild_remove(self, guild):

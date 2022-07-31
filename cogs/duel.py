@@ -18,40 +18,45 @@ class duel(commands.Cog):
     def __init__(self, bot: pepebot) -> None:
         self.bot = bot
 
-    @commands.command(name='duel')
+    @commands.command(name='battle')
     @commands.guild_only()
     async def duel(self, ctx: Context, member: discord.Member):
         if member.id == ctx.author.id:
-            await ctx.error_embed(error_name='duel command error', error_dis='you cant duel your self, lmfao')
+            await ctx.error_embed(
+                error_name='battle command error',
+                error_dis='you cant duel your self, lmfao'
+            )
+            return
+        if (ctx.channel.type == discord.ChannelType.public_thread) or (ctx.channel.type == discord.ChannelType.private_thread):
+            await ctx.error_embed(
+                error_name='battle command error',
+                error_dis='you cant run the battle command in a thread'
+            )
+            return
+
 
         response_msg = await ctx.send(f"{member.mention} has been invited for meme duel, status: waiting...")
 
         try:
             channel = await member.create_dm()
             view = duel_button(message=response_msg, member=member, user=ctx.author, bot=self.bot)
-            await channel.send(f'you have been invited for meme duel ``{member.name}``', view=view)
+            embed = discord.Embed(title=f'you have been invited for meme battle by {ctx.author.name}')
+            message = await channel.send(embed=embed, view=view)
+            view.interaction_message = message
 
         except discord.Forbidden or discord.HTTPException:
+            view = duel_button(message=response_msg, member=member, user=ctx.author, bot=self.bot)
             second_response = await response_msg.edit(content='failed to send message to user creating embed....')
             await asyncio.sleep(3)
             response2 = await second_response.edit(
                 content=f"{member.mention} you have 20 min to accept the invite type on "
-                        f"accept y")
+                        f"accept ",view=view)
+
+
     @commands.command(name='test')
     async def test(self,ctx:Context):
-        message = await ctx.send('helo')
-        await message.add_reaction("👍")
-        await asyncio.sleep(3)
-        message = await ctx.channel.fetch_message(message.id)
-        count = 0
-        for reaction in message.reactions:
-            if reaction.emoji == "👍":
-                count = reaction.count
-                break
-
-        print(count)
-
-
+        embed = discord.Embed(title='hello',description='nooooooooooo',type='link')
+        await ctx.send(embed=embed)
 async def setup(bot: pepebot) -> None:
     await bot.add_cog(
         duel(bot))
