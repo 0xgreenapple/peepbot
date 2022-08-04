@@ -1,19 +1,14 @@
-import asyncio
-import io
-import os
-import random
-from io import BytesIO
 
-import aiohttp
+
+
 import discord
 from discord.ext import commands
 from discord.ext.commands import BucketType, cooldown
 
 from handler.Context import Context
 from handler.pagination import SimplePages
-from handler.view import duel_button
 from pepebot import pepebot
-import logging
+
 
 
 class leaderboard(SimplePages):

@@ -15,21 +15,13 @@ __version__ = '0.0.2a'
 import logging
 import os
 import time
-import json
 import asyncio
 import datetime
 from collections import Counter
 
 import aiohttp
 import discord
-from typing import TYPE_CHECKING
-import certifi
-import ssl
-import dotenv
-import random
-import contextlib
 
-from glob import glob
 from itertools import cycle
 from platform import python_version
 from discord.ext import commands, tasks
@@ -131,7 +123,7 @@ class pepebot(commands.Bot):
         self.loop.create_task(
             self.startup_tasks(), name="Bot startup tasks"
         )
-        COGS = ['duel','setup','error handler','help']
+        COGS = ['duel','setup1','error handler','help']
         self.console_log("loading cogs..")
         for cog in COGS:
             await self.load_extension(f"cogs.{cog}")

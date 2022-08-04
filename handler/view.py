@@ -10,7 +10,6 @@ import os
 
 from discord.ui import View
 from datetime import datetime, timedelta
-from discord import errors
 import pepebot
 
 
