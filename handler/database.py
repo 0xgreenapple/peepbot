@@ -18,7 +18,7 @@ async def create_database_connection():
     connection = await asyncpg.connect(
         user="postgres",
         password=password,
-        database="sussydb",
+        database="postgres",
         host=host
     )
     await initialize_database_connection(connection)
@@ -34,7 +34,7 @@ async def create_database_pool():
     return await asyncpg.create_pool(
         user="postgres",
         password=password,
-        database="sussydb",
+        database="postgres",
         min_size=1,
         host=host,
         init=initialize_database_connection

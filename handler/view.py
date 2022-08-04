@@ -6,15 +6,18 @@ import shlex
 
 import aiohttp
 import discord
+import os
 
 from discord.ui import View
 from datetime import datetime, timedelta
-
+from discord import errors
 import pepebot
+
 
 class Arguments(argparse.ArgumentParser):
     def error(self, message: str):
         raise RuntimeError(message)
+
 
 class duel_button(discord.ui.View):
     def __init__(self,
@@ -86,7 +89,8 @@ class duel_button(discord.ui.View):
     @discord.ui.button(label='cancel', style=discord.ButtonStyle.danger)
     async def cancel(self, interaction: discord.Interaction, button):
         int_message = interaction.message
-        await self.message.edit(content=f'{interaction.user.mention} rejected the invite find another participant!',view=None)
+        await self.message.edit(content=f'{interaction.user.mention} rejected the invite find another participant!',
+                                view=None)
         await interaction.message.delete()
         await interaction.response.send_message('successfully canceled the match', ephemeral=True)
 
@@ -103,6 +107,12 @@ class duel_button(discord.ui.View):
         except:
             pass
 
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item) -> None:
+        if not interaction.response.is_dont():
+            await interaction.response.send_message('something went wrong', ephemeral=True)
+        else:
+            await interaction.followup.send('something went wrong', ephemeral=True)
+
 
 class ready_button(discord.ui.View):
     def __init__(self,
@@ -115,7 +125,7 @@ class ready_button(discord.ui.View):
                  memes: list
 
                  ):
-        super().__init__(timeout=10 * 60)
+        super().__init__(timeout=10*60)
         self.message: discord.Message = message
         self.member: discord.Member = member
         self.user: discord.Member = user
@@ -128,7 +138,6 @@ class ready_button(discord.ui.View):
     async def get_player_img(self, memeid, message2, message3: str = None, *, url):
         res: aiohttp.ClientSession = self.bot.aiohttp_session
 
-
         members = []
         first_caption = ''
         secondcaption = ''
@@ -136,12 +145,15 @@ class ready_button(discord.ui.View):
         if message2.first:
             first_caption = ' '.join(message2.first)
         if message2.second:
-            secondcaption = '' .join(message2.second)
+            secondcaption = ''.join(message2.second)
         if message3 is None:
             message3 = ''
+        password = os.environ.get('IMAGEPASS')
+        username = os.environ.get('IMAGEUSER')
+
         params = {
-            'username': 'password',
-            'password': 'password',
+            'username': f'{username}',
+            'password': f'{password}',
             'template_id': f'{memeid}',
             'text0': f'{first_caption}',
             'text1': f'{secondcaption}',
@@ -154,7 +166,7 @@ class ready_button(discord.ui.View):
         file = discord.File(fp=io.BytesIO(bytes), filename='meme.png')
         return file
 
-    async def load_img(self, interaction: discord.Interaction):
+    async def load_img(self, interaction: discord.Interaction,voting_time:int,customization_time:int):
 
         # bot session
         session: aiohttp.ClientSession = self.bot.aiohttp_session
@@ -188,19 +200,31 @@ class ready_button(discord.ui.View):
                 image_byets = await image.read()
                 break
 
+        if interaction.guild.premium_tier >= 2:
+            is_permium = True
+        else:
+            is_permium = False
         thread_one = await self.message.channel.create_thread(
             name=f'{self.member.name} room',
-            type=discord.ChannelType.public_thread
+            type=discord.ChannelType.private_thread
+            if interaction.guild.premium_tier >= 2
+            else discord.ChannelType.public_thread
         )
         thread_two = await self.message.channel.create_thread(
             name=f'{self.user.name} room',
-            type=discord.ChannelType.public_thread
+            type=discord.ChannelType.private_thread
+            if interaction.guild.premium_tier >= 2
+            else discord.ChannelType.public_thread
         )
 
         # create dms
-
-        member_channel = await self.member.create_dm()
-        user_channel = await self.user.create_dm()
+        try:
+            member_channel = await self.member.create_dm()
+            user_channel = await self.user.create_dm()
+        except discord.Forbidden:
+            await self.message.channel.send('dm is turned off, i cant send invite.. \n aborting the game')
+            await self.message.delete()
+            return
 
         view1 = discord.ui.View()
         view2 = discord.ui.View()
@@ -216,45 +240,87 @@ class ready_button(discord.ui.View):
 
         sendembed = discord.Embed(
             title="``duel``",
-            description='>>> you have 10 min to make best meme from this template \n'
+            description='>>> you have 5 min to make best meme from this template \n'
                         'run ``$caption --first <your first caption> --second <your second caption>`` \n'
                         'example: **$caption --first yo momma sa fat that she cant even run --second lol**'
         )
-        file = discord.File(fp=io.BytesIO(image_byets), filename='memme.png')
-        t_one = await thread_one.send(file=file, embed=sendembed)
-        file = discord.File(fp=io.BytesIO(image_byets), filename='memme.png')
-        t_two = await thread_two.send(file=file, embed=sendembed)
+        password = os.environ.get('IMAGEPASS')
+        username = os.environ.get('IMAGEUSER')
+
+        params = {
+            'username': f'{username}',
+            'password': f'{password}',
+            'template_id': f'{memeid}',
+            'text0': f'first',
+            'text1': f'second',
+        }
+        res = self.bot.aiohttp_session
+        response = await res.request('POST', caption_url, params=params)
+        json = await response.json()
+        url = json['data']['url']
+        image = await res.get(url=url)
+        bytes = await image.read()
+
+        file =  discord.File(fp=io.BytesIO(bytes), filename='memme.png')
+
+        t_one = await thread_one.send(content=f'{self.member.mention}', file=file, embed=sendembed)
+
+        file = discord.File(fp=io.BytesIO(bytes), filename='memme.png')
+
+        t_two = await thread_two.send(content=f'{self.user.mention}', file=file, embed=sendembed)
 
         checks = []
         users_msg = []
         users = []
         first_user_submission = []
         second_user_submission = []
+        announcement_id = await self.bot.db.fetchval(
+            """SELECT announcement FROM test.setup
+                WHERE guild_id1 = $1""",interaction.guild.id
+        )
+        vote_id = await self.bot.db.fetchval(
+            """SELECT vote FROM test.setup
+                WHERE guild_id1 = $1""", interaction.guild.id
+        )
+        if not announcement_id is None:
+            announcement =  self.bot.get_channel(announcement_id)
+        else:
+            announcement = self.message.channel
+
+        if not vote_id is None:
+            vote = self.bot.get_channel(vote_id)
+        else:
+            vote = self.message.channel
+
+
 
         def check(message: discord.Message) -> bool:
             if self.member.id == self.user.id:
                 print('yes')
             args = message.content[8:]
-            if message.author.id == self.member.id and message.content.startswith('$caption'):
+            if message.author.id == self.member.id and message.content.startswith(
+                    '$caption') and message.channel.id == t_one.channel.id:
                 parser = Arguments(add_help=False, allow_abbrev=False)
-                parser.add_argument('--first','--f',nargs='+')
-                parser.add_argument('--second','--s',nargs='+')
+                parser.add_argument('--first', '--f', nargs='+')
+                parser.add_argument('--second', '--s', nargs='+')
                 failed = False
                 try:
                     args = parser.parse_args(shlex.split(message.content[8:]))
                 except Exception as e:
                     self.bot.loop.create_task(message.channel.send(str(e)))
-                    failed=True
+                    failed = True
 
                 if not failed:
                     users_msg.append(f"{message.author.mention} has completed")
                     checks.append(message.author.id)
                     users.append({'message': args, 'id': message.author.id})
+                    self.bot.loop.create_task(t_one.channel.send('submitted'))
 
-            if message.author.id == self.user.id and message.content.startswith('$caption'):
+            if message.author.id == self.user.id and message.content.startswith(
+                    '$caption') and message.channel.id == t_two.channel.id:
                 parser = Arguments(add_help=False, allow_abbrev=False)
-                parser.add_argument('--first','--f',nargs='+')
-                parser.add_argument('--second','--s',nargs='+')
+                parser.add_argument('--first', '--f', nargs='+')
+                parser.add_argument('--second', '--s', nargs='+')
                 failed = False
                 args = message.content[8]
                 try:
@@ -266,11 +332,12 @@ class ready_button(discord.ui.View):
                     users_msg.append(f"{message.author.mention} has completed")
                     checks.append(message.author.id)
                     users.append({'message': args, 'id': message.author.id})
+                    self.bot.loop.create_task(t_two.channel.send('submitted'))
 
             return len(checks) == 2
 
         try:
-            await self.bot.wait_for(f'message', timeout=5*60, check=check)
+            await self.bot.wait_for(f'message', timeout=customization_time*60, check=check)
         except asyncio.TimeoutError:
             if len(users) != 0:
                 user_id = users[0]['id']
@@ -281,20 +348,25 @@ class ready_button(discord.ui.View):
                     url=caption_url
                 )
                 failed_user = self.user if user.id == self.user else self.member
-                await self.message.delete()
-                await self.message.channel.send(
-                    f'by {user.mention} has won the duel, lmfao {failed_user.mention} failed to make meme in given time',
+                try:
+                    await self.message.delete()
+                except discord.Forbidden:
+                    pass
+                await announcement.send(
+                    f'by {user.mention} won the duel, {failed_user.mention} failed in time',
                     file=first_user_submission
                 )
             else:
-                await self.message.delete()
+                try:
+                    await self.message.delete()
+                except:
+                    pass
                 await self.message.channel.send(
-                    f'boooooo, {self.user.mention} and {self.member.mention} both failed to make meme in 5 min lol',
-                    delete_after=60
+                    f'{self.user.mention} and {self.member.mention} both failed to make meme in 5 min lol',
+                    delete_after=30
                 )
 
             return
-
 
         if users[0]['id'] == self.user.id:
             print(t_one)
@@ -324,21 +396,24 @@ class ready_button(discord.ui.View):
                 url=caption_url
             )
 
-        await self.message.delete()
+        try:
+            await self.message.delete()
+        except discord.Forbidden:
+            pass
 
-        first_submission = await self.message.channel.send(
+        first_submission = await vote.send(
             f'by {self.user.mention} | vote!',
             file=first_user_submission
         )
-        await first_submission.add_reaction("👍")
+        await first_submission.add_reaction("<:pvote:1004443231762776114>")
 
-        second_submission = await self.message.channel.send(
+        second_submission = await vote.send(
             f'by {self.member.mention} | vote!',
             file=second_user_submission
 
         )
-        await second_submission.add_reaction("👍")
-        embeed = discord.Embed(title=f'your meme has been submitted in {self.message.channel.mention} '
+        await second_submission.add_reaction("<:pvote:1004443231762776114>")
+        embeed = discord.Embed(title=f'your meme has been submitted in {self.message.channel.name} '
                                      f'deleting channel in 3 sec ...')
 
         await t_one.edit(embeds=[embeed], attachments=[], view=None)
@@ -347,32 +422,86 @@ class ready_button(discord.ui.View):
         self.bot.loop.create_task(thread_one.delete())
         self.bot.loop.create_task(thread_two.delete())
 
-        sleep_until = datetime.now() + timedelta(seconds=60)
+        sleep_until = datetime.now() + timedelta(seconds=20)
 
         await discord.utils.sleep_until(sleep_until)
-        x_msg = await interaction.channel.fetch_message(first_submission.id)
-        y_msg = await interaction.channel.fetch_message(second_submission.id)
+        x_msg = await vote.fetch_message(first_submission.id)
+        y_msg = await vote.fetch_message(second_submission.id)
 
         count1 = 0
         count2 = 0
 
         for reaction in x_msg.reactions:
-            if reaction.emoji == "👍":
+            if reaction.emoji.id == 1004443231762776114:
                 count1 = reaction.count
                 break
         for reaction in y_msg.reactions:
-            if reaction.emoji == "👍":
+            if reaction.emoji.id == 1004443231762776114:
                 count2 = reaction.count
                 break
-
+        print(x_msg.reactions)
+        print(y_msg.reactions)
         if count1 > count2:
+            await first_submission.delete()
             await second_submission.delete()
-            await first_submission.edit(content=f'{self.member.mention} has won the duel by {count1 - count2} votes!')
-            await thread_one.delete()
+            if announcement:
+                try:
+                    await self.message.delete()
+                except:
+                    print('forbidden')
+                first_user_submission = await self.get_player_img(
+                    memeid=memeid, message2=users[0]['message'],
+                    url=caption_url
+                )
+                await announcement.send(content=f'{self.user.mention} has won the duel by {count1 - count2} votes!',file=first_user_submission)
+            await self.bot.db.execute(
+                """
+                INSERT INTO test.leaderboard(user_id1,guild_id1,likes)
+                VALUES($1,$2,$3)
+                ON CONFLICT (guild_id1,user_id1) DO
+                UPDATE SET likes = COALESCE(leaderboard.likes, 0) + $3 ;
+                """, self.user.id, interaction.guild.id, count1
+            )
         elif count2 > count1:
             await first_submission.delete()
-            await second_submission.edit(content=f'{self.user.mention} has won by {count2 - count1} votes')
-            await thread_two.delete()
+            await second_submission.delete()
+            if announcement:
+                try:
+                    await self.message.delete()
+                except:
+                    print('forbidden')
+                second_user_submission = await self.get_player_img(
+                    memeid=memeid, message2=users[0]['message'],
+                    url=caption_url
+                )
+                await announcement.send(content=f'{self.member.mention} has won by {count2 - count1} votes',file=second_user_submission)
+            await self.bot.db.execute(
+                """
+                INSERT INTO test.leaderboard(user_id1,guild_id1,likes)
+                VALUES($1,$2,$3)
+                ON CONFLICT (guild_id1,user_id1) DO
+                UPDATE SET likes = COALESCE(leaderboard.likes, 0) + $3 ;
+                """, self.member.id, interaction.guild.id, count2
+            )
+        else:
+            await first_submission.edit(content=f'{self.member.mention}! no one won that was a draw votes:{count1}')
+            await second_submission.edit(content=f'{self.user.mention}! no one won that was a draw votes:{count2}')
+            await self.bot.db.execute(
+                """
+                INSERT INTO test.leaderboard(user_id1,guild_id1,likes)
+                VALUES($1,$2,$3)
+                ON CONFLICT (guild_id1,user_id1) DO
+                UPDATE SET likes = COALESCE(leaderboard.likes, 0) + $3 ;
+                """, self.member.id, interaction.guild.id, count1
+            )
+            await self.bot.db.execute(
+                """
+                INSERT INTO test.leaderboard(user_id1,guild_id1,likes)
+                VALUES($1,$2,$3)
+                ON CONFLICT (guild_id1,user_id1) DO
+                UPDATE SET likes = COALESCE(leaderboard.likes, 0) + $3 ;
+                """, self.member.id, interaction.guild.id, count2
+            )
 
     @discord.ui.button(label='ready', style=discord.ButtonStyle.green)
     async def ready(self, interaction: discord.Interaction, button):
@@ -417,6 +546,20 @@ class ready_button(discord.ui.View):
                 message_id = $1 
                 """, self.message.id)
 
+            custimastion_time = await self.bot.db.fetchval(
+                """SELECT customization_time FROM test.setup 
+                WHERE guild_id1=$1""", interaction.guild.id
+            )
+            vote_time = await self.bot.db.fetchval(
+                """SELECT vote_time FROM test.setup 
+                WHERE guild_id1=$1""", interaction.guild.id
+            )
+            if custimastion_time is None:
+                custimastion_time = 5
+
+            if vote_time is None:
+                vote_time = 20
+
             if member1:
                 text.append(f"{member.mention} is ready")
             if use1r:
@@ -426,15 +569,14 @@ class ready_button(discord.ui.View):
                 text1 = '\n'.join(text)
 
                 embed = discord.Embed(title='``duel``',
-                                      description=f'>>> you have 10 min to make best meme from '
-                                                  f'this template, Click the ready button when you are ready! \n{text1}')
+                                      description=f'>>> you have {custimastion_time} min to make best meme **check your dms**')
                 await self.message.edit(embed=embed, view=None)
-                await self.load_img(interaction)
+                await self.load_img(interaction,customization_time=custimastion_time,voting_time=vote_time)
 
             else:
                 text1 = '\n'.join(text)
                 embed = discord.Embed(title='``duel``',
-                                      description=f'>>> you have 10 min to make best meme from '
+                                      description=f'>>> you have {custimastion_time} min to make best meme from '
                                                   f'this template, Click the ready button when you are ready! \n{text1}')
 
                 await self.message.edit(embed=embed)
@@ -512,9 +654,34 @@ class ready_button(discord.ui.View):
                     message1 = await self.message.edit(
                         attachments=[file], view=view
                     )
+                    custimastion_time = await self.bot.db.fetchval(
+                        """SELECT customization_time FROM test.setup 
+                        WHERE guild_id1=$1""", interaction.guild.id
+                    )
+                    vote_time = await self.bot.db.fetchval(
+                        """SELECT vote_time FROM test.setup 
+                        WHERE guild_id1=$1""", interaction.guild.id
+                    )
                     self.bot.loop.create_task(self.bot.db.execute(
                         """UPDATE test.duel SET meme_id = $1 WHERE message_id = $2
 
                         """, memeid, self.message.id
                     ))
+                    embed = discord.Embed(title='``duel``',
+                                          description=f'>>> you have {custimastion_time} min to make best meme from '
+                                                      f'this template, Click the ready button when you are ready!')
                     break
+
+    async def on_timeout(self) -> None:
+        try:
+            await self.message.delete()
+        except discord.Forbidden or discord.HTTPException or discord.NotFound:
+            print('yes')
+        else:
+            await self.message.channel.send(f'aborting the battle {self.user.mention} {self.member.mention}')
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item) -> None:
+        if not interaction.response.is_dont():
+            await interaction.response.send_message('something went wrong', ephemeral=True)
+        else:
+            await interaction.followup.send('something went wrong', ephemeral=True)

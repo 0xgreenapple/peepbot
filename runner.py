@@ -1,4 +1,6 @@
 from enum import Enum
+
+import aiohttp.client_exceptions
 import discord
 import subprocess
 import ssl
@@ -61,6 +63,9 @@ if __name__ == "__main__":
                 client.console_log("starting up the bot")
                 await client.start()
                 await client.change_status.start()
+
+            except aiohttp.client_exceptions.ClientConnectionError:
+                print('connection error')
             finally:
                 client.console_log("shutting down the bot tasks")
                 await client.shutdown_tasks()

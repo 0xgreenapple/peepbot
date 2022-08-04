@@ -131,12 +131,13 @@ class pepebot(commands.Bot):
         self.loop.create_task(
             self.startup_tasks(), name="Bot startup tasks"
         )
-        COGS = ['duel']
+        COGS = ['duel','setup','error handler','help']
         self.console_log("loading cogs..")
         for cog in COGS:
             await self.load_extension(f"cogs.{cog}")
             self.console_log(f"{cog} loaded ")
         self.console_log("setup hook complete")
+        await self.tree.sync()
 
     # setup database and create tables
     async def connect_to_database(self):
@@ -153,7 +154,6 @@ class pepebot(commands.Bot):
     async def initialize_database(self):
         await self.connect_to_database()
         await self.db.execute("CREATE SCHEMA IF NOT EXISTS test")
-        await self.db.execute("DROP TABLE IF EXISTS test.duel")
         await self.db.execute(
             """
             CREATE TABLE IF NOT EXISTS test.duel(
@@ -167,6 +167,28 @@ class pepebot(commands.Bot):
                 r_member_ready      boolean DEFAULT FALSE,
                 img2_id       BIGINT,
                 meme_id       TEXT
+            )
+        """)
+
+        await self.db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test.leaderboard(
+                guild_id1     BIGINT NOT NULL,
+                user_id1      BIGINT NOT NULL,
+                likes         BIGINT DEFAULT 0,
+                 PRIMARY KEY (guild_id1,user_id1)
+            )
+        """)
+
+        await self.db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test.setup(
+                guild_id1     BIGINT NOT NULL,
+                announcement      BIGINT,
+                vote              BIGINT,
+                vote_time         BIGINT DEFAULT 10,
+                customization_time BIGINT DEFAULT 5,
+                PRIMARY KEY (guild_id1)
             )
         """)
 
