@@ -120,7 +120,7 @@ class duel(commands.Cog):
     @commands.guild_only()
     @commands.cooldown(4, 5, BucketType.user)
     async def stats(self, ctx: Context, member: discord.Member = None):
-        member = member if member else ctx.author
+        member1 = member if member else ctx.author
 
         msg = await self.bot.db.fetch(
             """ SELECT user_id1,  likes 
@@ -134,7 +134,7 @@ class duel(commands.Cog):
             """
             SELECT likes, user_id1 FROM test.leaderboard
             WHERE user_id1=$1 AND guild_id1=$2
-            """, member.id, ctx.guild.id
+            """, member1.id, ctx.guild.id
         )
 
         if stats is None:
@@ -180,14 +180,17 @@ class duel(commands.Cog):
                 top_rank = None
 
         if top_rank:
-            msg = f'**rank**: #{number} \n you are top {top_rank} in the list'
+            if not member:
+                msg = f'**rank**: #{number} \n you are top {top_rank} in the list'
+            else:
+                msg = f'**rank**: #{number} \n  {member1.name} top {top_rank} in the list'
 
         else:
             msg = f'**rank**: #{number}'
 
         embed = discord.Embed(
-            title=f'``{member.name}`` stats',
-            description=f'>>> {self.bot.right} **User**:{member.mention}'
+            title=f'``{member1.name}`` stats',
+            description=f'>>> {self.bot.right} **User**:{member1.mention}'
                         f'\n{msg} '
 
         )

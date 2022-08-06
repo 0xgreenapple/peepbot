@@ -461,7 +461,7 @@ class creation(commands.Cog):
             await ctx.send(content=f'{self.bot.spongebob} give me something to edit, must be image or gif')
             return
 
-    @commands.command(name='canny')
+    @commands.command(name=' ')
     @commands.cooldown(1, 3, BucketType.user)
     async def canny(self, ctx: Context, file: typing.Optional[discord.Attachment]):
 

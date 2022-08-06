@@ -147,6 +147,7 @@ class pepebot(commands.Bot):
     # setup database and create tables
     async def initialize_database(self):
         await self.connect_to_database()
+
         await self.db.execute("CREATE SCHEMA IF NOT EXISTS test")
         await self.db.execute(
             """
@@ -166,6 +167,7 @@ class pepebot(commands.Bot):
 
         await self.db.execute(
             """
+    
             CREATE TABLE IF NOT EXISTS test.leaderboard(
                 guild_id1     BIGINT NOT NULL,
                 user_id1      BIGINT NOT NULL,
