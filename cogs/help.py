@@ -1,6 +1,3 @@
-
-
-
 import discord
 from discord.ext import commands
 from discord.ext.commands import BucketType, cooldown
@@ -8,7 +5,6 @@ from discord.ext.commands import BucketType, cooldown
 from handler.Context import Context
 from handler.pagination import SimplePages
 from pepebot import pepebot
-
 
 
 class leaderboard(SimplePages):
@@ -23,7 +19,7 @@ class help(commands.Cog):
         self.bot = bot
 
     @commands.command(name='help')
-    @commands.cooldown(1,5,BucketType.user)
+    @commands.cooldown(1, 5, BucketType.member)
     async def help(self, ctx: Context):
         customization_time = await self.bot.db.fetchval(
             """
@@ -63,16 +59,16 @@ class help(commands.Cog):
         "you finish customizing your meme, it will be posted "
         f"in the vote {vote1.mention if vote else ''} channel and the person with the highest "
         f"vote will be announced in the announcement {announcment1.mention if announcment1 else ''}channel. \n "
-        f"> ** max time to customise:** {customization_time}m \n"
-        f">**max time to vote::{vote_time}m \n \n"
+        f"> ** max time to customise:** {customization_time if customization_time else '10'}m \n"
+        f"> **max time to vote:**{vote_time if vote_time else '20'}m \n \n"
         "<:right:975326725158346774> ``$stats <optional user>`` \n"
         "> see your or a user stats and rank on the leaderboard \n \n"
         "<:right:975326725158346774> ``$leaderboard``  \n"
         "> see the leaderboard sorted by top members \n \n"
-        "> <:right:975326725158346774> ``$template`` \n"
-        "get a random meme template")
+        "<:right:975326725158346774> ``$template`` \n"
+        "> get a random meme template")
 
-        embed.set_thumbnail(url=self.bot.user.avatar.url)
+        # embed.set_thumbnail(url=self.bot.user.avatar.url)
         await ctx.send(embed=embed)
 
 

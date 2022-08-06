@@ -16,9 +16,9 @@ host = os.environ.get('DBHOST')
 @contextlib.asynccontextmanager
 async def create_database_connection():
     connection = await asyncpg.connect(
-        user="dsikpvojmsaqia",
+        user="postgres",
         password=password,
-        database="d40hg832lq5kiu",
+        database="postgres",
         host=host
     )
     await initialize_database_connection(connection)
@@ -32,9 +32,9 @@ async def create_database_connection():
 async def create_database_pool():
     print('pool')
     return await asyncpg.create_pool(
-        user="dsikpvojmsaqia",
+        user="postgres",
         password=password,
-        database="d40hg832lq5kiu",
+        database="postgres",
 
         host=host,
         init=initialize_database_connection

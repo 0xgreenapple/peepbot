@@ -63,7 +63,7 @@ class pepebot(commands.Bot):
 
             ),
 
-            application_id=958334261541343262,
+            application_id=1004838979952193586,
             help_command=None,
 
         )
@@ -103,9 +103,11 @@ class pepebot(commands.Bot):
         self.search_emoji = '<:icons8search100:975326725472944168>'
         self.failed_emoji = '<:icons8closewindow100:975326725426778184>'
         self.success_emoji = '<:icons8ok100:975326724747304992>'
-        self.right = '<:icons8chevronright100:975326725158346774>'
+        self.right = '<:right:975326725158346774>'
         self.file_emoji = '<:icons8document100:975326725229641781>'
         self.moderator_emoji = "<:icons8protect100:975326725502296104>"
+        self.spongebob = "<:AYS_sadspongebob:1005427777345949717>"
+        self.doge = "<a:DogeDance:1005429259017392169>"
 
         self.db = self.database = self.database_connection_pool = None
         self.connected_to_database = asyncio.Event()
@@ -123,7 +125,7 @@ class pepebot(commands.Bot):
         self.loop.create_task(
             self.startup_tasks(), name="Bot startup tasks"
         )
-        COGS = ['duel','setup1','error handler','help']
+        COGS = ['duel','setup1','help','creation','error handler']
         self.console_log("loading cogs..")
         for cog in COGS:
             await self.load_extension(f"cogs.{cog}")

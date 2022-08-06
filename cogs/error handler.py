@@ -40,9 +40,8 @@ class error_handler(commands.Cog):
 
         # handel the command cooldown
         elif isinstance(error, commands.CommandOnCooldown):
-            error_name = "command on cooldown"
             error_dis = f"{ctx.command.name} command is currently on cooldown try again after {round(error.retry_after)} seconds".title()
-            return await ctx.error_embed(error_name=error_name, error_dis=error_dis)
+            return await ctx.error_embed( description=error_dis)
 
         elif isinstance(error, commands.MissingRequiredArgument):
             name = "missing argument"

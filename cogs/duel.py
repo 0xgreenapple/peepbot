@@ -3,8 +3,7 @@ import io
 
 import random
 
-
-
+import aiohttp
 import discord
 from discord.ext import commands
 from discord.ext.commands import BucketType, cooldown
@@ -13,7 +12,6 @@ from handler.Context import Context
 from handler.pagination import SimplePages
 from handler.view import duel_button
 from pepebot import pepebot
-
 
 
 class leaderboard(SimplePages):
@@ -29,26 +27,23 @@ class duel(commands.Cog):
 
     @commands.command(name='battle')
     @commands.guild_only()
-    @commands.bot_has_permissions(manage_channels=True,manage_threads=True)
-    @commands.cooldown(1,10*60,BucketType.user)
+    @commands.bot_has_permissions(manage_channels=True, manage_threads=True)
+    @commands.cooldown(2, 260, BucketType.member)
     async def duel(self, ctx: Context, member: discord.Member):
         if member.id == ctx.author.id:
             await ctx.error_embed(
-                error_name='battle command error',
-                error_dis='you cant duel your self, lmfao'
+                description='you cant duel your self!'
             )
             return
         if member.bot:
             await ctx.error_embed(
-                error_name='battle command error',
-                error_dis='you cant battle a bot'
+                description='you cant battle a bot'
             )
             return
         if (ctx.channel.type == discord.ChannelType.public_thread) or (
                 ctx.channel.type == discord.ChannelType.private_thread):
             await ctx.error_embed(
-                error_name='battle command error',
-                error_dis='you cant run the battle command in a thread'
+                description='you cant run the battle command in a thread'
             )
             return
 
@@ -66,7 +61,7 @@ class duel(commands.Cog):
             second_response = await response_msg.edit(content='failed to send message to user creating embed....')
             await asyncio.sleep(3)
             response2 = await second_response.edit(
-                content=f"{member.mention} you have 20 min to accept the invite type on "
+                content=f"{member.mention} you have 20 min to accept the invite click on "
                         f"accept ", view=view)
 
     @commands.command(name='leaderboard')
@@ -79,6 +74,10 @@ class duel(commands.Cog):
             fetch first 10 rows only
             """, ctx.guild.id
         )
+        if msg is None:
+            await ctx.error_embed(description='the leaderboard for this guild is currently not available')
+            return
+
         users = []
         j = 1
         for i in msg:
@@ -92,8 +91,8 @@ class duel(commands.Cog):
             await warnings.start()
 
     @commands.command(name='template')
-    @commands.cooldown(1,10,BucketType.user)
-    async def template(self,ctx:Context):
+    @commands.cooldown(1, 5, BucketType.member)
+    async def template(self, ctx: Context):
         session = self.bot.aiohttp_session
         a = await session.request(
             method='GET',
@@ -114,10 +113,8 @@ class duel(commands.Cog):
                 image_byets = await image.read()
                 file = discord.File(fp=io.BytesIO(image_byets), filename='meme.png')
 
-                await ctx.send(file=file)
+                await ctx.send(f"id:``{i['id']}``", file=file)
                 break
-
-
 
     @commands.command(name='stats')
     @commands.guild_only()
@@ -133,7 +130,6 @@ class duel(commands.Cog):
             """, ctx.guild.id
         )
 
-
         stats = await self.bot.db.fetchrow(
             """
             SELECT likes, user_id1 FROM test.leaderboard
@@ -142,10 +138,13 @@ class duel(commands.Cog):
         )
 
         if stats is None:
-            await ctx.error_embed(
-                error_name='command error',
-                error_dis='the stats for this user is not available'
-            )
+            if not member:
+                embed = discord.Embed(description=f'{self.bot.right} Stats for you are not available at the moment!')
+            else:
+                embed = discord.Embed(description=f'{self.bot.right} the stats for this user is not available!')
+
+            await ctx.send(embed=embed)
+
             return
         users = []
         j = 1
@@ -181,15 +180,16 @@ class duel(commands.Cog):
                 top_rank = None
 
         if top_rank:
-            msg = f'**ranks**: #{number} top {top_rank}'
+            msg = f'**rank**: #{number} \n you are top {top_rank} in the list'
 
         else:
-            msg = f'**ranks**: #{number}'
+            msg = f'**rank**: #{number}'
 
         embed = discord.Embed(
             title=f'``{member.name}`` stats',
             description=f'>>> {self.bot.right} **User**:{member.mention}'
-                        f'\n{msg}'
+                        f'\n{msg} '
+
         )
         await ctx.send(embed=embed)
 

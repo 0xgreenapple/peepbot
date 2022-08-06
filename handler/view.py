@@ -34,64 +34,75 @@ class duel_button(discord.ui.View):
 
     @discord.ui.button(label='accept', style=discord.ButtonStyle.green)
     async def accept(self, interaction: discord.Interaction, button):
-        await interaction.response.defer()
 
-        message = interaction.message
-        sent_message_url = self.message.jump_url
+        if interaction.user.id == self.member.id:
+            await interaction.response.defer()
+            sent_message_url = self.message.jump_url
 
-        embed = discord.Embed(
-            title=f'``Duel``',
-            description=f'>>> you have 10 min to make best meme from '
-                        f'this template, Click the ready button when you are ready! \n'
-        )
-        session: aiohttp.ClientSession = self.bot.aiohttp_session
+            embed = discord.Embed(
+                title=f'``Duel``',
+                description=f'>>> you have 10 min to make best meme from '
+                            f'this template, Click the ready button when you are ready! \n'
+            )
+            session: aiohttp.ClientSession = self.bot.aiohttp_session
 
-        a = await session.request(
-            method='GET',
-            url='https://api.imgflip.com/get_memes'
-        )
-        json = await a.json()
-        memes = json['data']['memes']
-        ids = []
+            a = await session.request(
+                method='GET',
+                url='https://api.imgflip.com/get_memes'
+            )
+            json = await a.json()
+            memes = json['data']['memes']
+            ids = []
 
-        for i in memes:
-            if i['box_count'] == '2' or i['box_count'] == 2:
-                ids.append(i['id'])
-        memeid = random.choice(ids)
+            for i in memes:
+                if i['box_count'] == '2' or i['box_count'] == 2:
+                    ids.append(i['id'])
+            memeid = random.choice(ids)
 
-        for i in memes:
-            if i['id'] == f'{memeid}':
-                image = await session.get(url=i['url'])
-                image_byets = await image.read()
-                file = discord.File(fp=io.BytesIO(image_byets), filename='meme.png')
-                view = ready_button(message=self.message, member=self.member, user=self.user,
-                                    bot=self.bot, embed=embed, ids=ids, memes=memes)
-                await self.message.edit(
-                    content=None,
-                    embed=embed,
-                    attachments=[file], view=view
-                )
-                break
+            for i in memes:
+                if i['id'] == f'{memeid}':
+                    image = await session.get(url=i['url'])
+                    image_byets = await image.read()
+                    file = discord.File(fp=io.BytesIO(image_byets), filename='meme.png')
+                    view = ready_button(message=self.message, member=self.member, user=self.user,
+                                        bot=self.bot, embed=embed, ids=ids, memes=memes)
+                    await self.message.edit(
+                        content=None,
+                        embed=embed,
+                        attachments=[file], view=view
+                    )
+                    break
 
-        self.bot.loop.create_task(self.bot.db.execute(
-            """INSERT INTO test.duel(user_id1,user_id2,message_id,meme_id)
-            VALUES($1,$2,$3,$4)
-            """, self.user.id, self.member.id, self.message.id, memeid
-        ))
+            self.bot.loop.create_task(self.bot.db.execute(
+                """INSERT INTO test.duel(user_id1,user_id2,message_id,meme_id)
+                VALUES($1,$2,$3,$4)
+                """, self.user.id, self.member.id, self.message.id, memeid
+            ))
 
-        view = View()
-        url = discord.ui.Button(url=sent_message_url, label='message')
-        view.add_item(url)
-        await interaction.message.delete()
-        await interaction.followup.send(f'you are ready,lets move!', view=view, ephemeral=True)
+            view = View()
+            url = discord.ui.Button(url=sent_message_url, label='message')
+            view.add_item(url)
+            if  interaction.message.channel.type == discord.ChannelType.private:
+                await interaction.message.delete()
+                await interaction.followup.send(f'you are ready,lets move!', view=view, ephemeral=True)
+        else:
+
+            await interaction.response.send_message('this is not for you', ephemeral=True)
 
     @discord.ui.button(label='cancel', style=discord.ButtonStyle.danger)
     async def cancel(self, interaction: discord.Interaction, button):
-        int_message = interaction.message
-        await self.message.edit(content=f'{interaction.user.mention} rejected the invite find another participant!',
-                                view=None)
-        await interaction.message.delete()
-        await interaction.response.send_message('successfully canceled the match', ephemeral=True)
+        if interaction.user.id == self.member.id:
+            int_message = interaction.message
+
+            await self.message.edit(content=f'{interaction.user.mention} rejected the invite find another participant!',
+                                    view=None)
+            if  interaction.message.channel.type == discord.ChannelType.private:
+                await interaction.message.delete()
+                await interaction.response.send_message('successfully canceled the match', ephemeral=True)
+        else:
+            await interaction.response.send_message('this is not for you',ephemeral=True)
+
+
 
     async def on_timeout(self) -> None:
         try:
@@ -107,7 +118,7 @@ class duel_button(discord.ui.View):
             pass
 
     async def on_error(self, interaction: discord.Interaction, error: Exception, item) -> None:
-        if not interaction.response.is_dont():
+        if not interaction.response.is_done():
             await interaction.response.send_message('something went wrong', ephemeral=True)
         else:
             await interaction.followup.send('something went wrong', ephemeral=True)
@@ -124,7 +135,7 @@ class ready_button(discord.ui.View):
                  memes: list
 
                  ):
-        super().__init__(timeout=10*60)
+        super().__init__(timeout=10 * 60)
         self.message: discord.Message = message
         self.member: discord.Member = member
         self.user: discord.Member = user
@@ -154,8 +165,8 @@ class ready_button(discord.ui.View):
             'username': f'{username}',
             'password': f'{password}',
             'template_id': f'{memeid}',
-            'text0': f'{first_caption}',
-            'text1': f'{secondcaption}',
+            'text0': f'{first_caption.lower()}',
+            'text1': f'{secondcaption.lower()}',
         }
         response = await res.request('POST', url, params=params)
         json = await response.json()
@@ -165,7 +176,7 @@ class ready_button(discord.ui.View):
         file = discord.File(fp=io.BytesIO(bytes), filename='meme.png')
         return file
 
-    async def load_img(self, interaction: discord.Interaction,voting_time:int,customization_time:int):
+    async def load_img(self, interaction: discord.Interaction, voting_time: int, customization_time: int):
 
         # bot session
         session: aiohttp.ClientSession = self.bot.aiohttp_session
@@ -189,20 +200,13 @@ class ready_button(discord.ui.View):
         memeid = await self.bot.db.fetchval(""" SELECT meme_id FROM test.duel WHERE message_id = $1
         """, self.message.id)
         memeid = memeid
-        message1 = None
-        file = None
-        message2 = None
-        image_byets = None
+
         for i in self.memes:
             if i['id'] == f'{memeid}':
                 image = await session.get(url=i['url'])
                 image_byets = await image.read()
                 break
 
-        if interaction.guild.premium_tier >= 2:
-            is_permium = True
-        else:
-            is_permium = False
         thread_one = await self.message.channel.create_thread(
             name=f'{self.member.name} room',
             type=discord.ChannelType.private_thread
@@ -220,7 +224,7 @@ class ready_button(discord.ui.View):
         try:
             member_channel = await self.member.create_dm()
             user_channel = await self.user.create_dm()
-        except discord.Forbidden:
+        except discord.Forbidden or discord.HTTPException:
             await self.message.channel.send('dm is turned off, i cant send invite.. \n aborting the game')
             await self.message.delete()
             return
@@ -260,7 +264,7 @@ class ready_button(discord.ui.View):
         image = await res.get(url=url)
         bytes = await image.read()
 
-        file =  discord.File(fp=io.BytesIO(bytes), filename='memme.png')
+        file = discord.File(fp=io.BytesIO(bytes), filename='memme.png')
 
         t_one = await thread_one.send(content=f'{self.member.mention}', file=file, embed=sendembed)
 
@@ -275,14 +279,14 @@ class ready_button(discord.ui.View):
         second_user_submission = []
         announcement_id = await self.bot.db.fetchval(
             """SELECT announcement FROM test.setup
-                WHERE guild_id1 = $1""",interaction.guild.id
+                WHERE guild_id1 = $1""", interaction.guild.id
         )
         vote_id = await self.bot.db.fetchval(
             """SELECT vote FROM test.setup
                 WHERE guild_id1 = $1""", interaction.guild.id
         )
         if not announcement_id is None:
-            announcement =  self.bot.get_channel(announcement_id)
+            announcement = self.bot.get_channel(announcement_id)
         else:
             announcement = self.message.channel
 
@@ -290,8 +294,6 @@ class ready_button(discord.ui.View):
             vote = self.bot.get_channel(vote_id)
         else:
             vote = self.message.channel
-
-
 
         def check(message: discord.Message) -> bool:
             if self.member.id == self.user.id:
@@ -336,7 +338,7 @@ class ready_button(discord.ui.View):
             return len(checks) == 2
 
         try:
-            await self.bot.wait_for(f'message', timeout=customization_time*60, check=check)
+            await self.bot.wait_for(f'message', timeout=customization_time * 60, check=check)
         except asyncio.TimeoutError:
             if len(users) != 0:
                 user_id = users[0]['id']
@@ -452,7 +454,8 @@ class ready_button(discord.ui.View):
                     memeid=memeid, message2=users[0]['message'],
                     url=caption_url
                 )
-                await announcement.send(content=f'{self.user.mention} has won the duel by {count1 - count2} votes!',file=first_user_submission)
+                await announcement.send(content=f'{self.user.mention} has won the duel by {count1 - count2} votes!',
+                                        file=first_user_submission)
             await self.bot.db.execute(
                 """
                 INSERT INTO test.leaderboard(user_id1,guild_id1,likes)
@@ -473,7 +476,8 @@ class ready_button(discord.ui.View):
                     memeid=memeid, message2=users[0]['message'],
                     url=caption_url
                 )
-                await announcement.send(content=f'{self.member.mention} has won by {count2 - count1} votes',file=second_user_submission)
+                await announcement.send(content=f'{self.member.mention} has won by {count2 - count1} votes',
+                                        file=second_user_submission)
             await self.bot.db.execute(
                 """
                 INSERT INTO test.leaderboard(user_id1,guild_id1,likes)
@@ -499,14 +503,14 @@ class ready_button(discord.ui.View):
                 VALUES($1,$2,$3)
                 ON CONFLICT (guild_id1,user_id1) DO
                 UPDATE SET likes = COALESCE(leaderboard.likes, 0) + $3 ;
-                """, self.member.id, interaction.guild.id, count2
+                """, self.user.id, interaction.guild.id, count2
             )
 
     @discord.ui.button(label='ready', style=discord.ButtonStyle.green)
     async def ready(self, interaction: discord.Interaction, button):
         if interaction.user.id == self.member.id or interaction.user.id == self.user.id:
-            int_message = interaction.message
-            messahe = await interaction.response.defer()
+
+            await interaction.response.defer()
             is_user_ready = False
             is_member_ready = False
             member = self.bot.get_user(self.member.id)
@@ -520,6 +524,7 @@ class ready_button(discord.ui.View):
                     )
                 else:
                     await interaction.followup.send('you are already ready', ephemeral=True)
+
             if interaction.user.id == member.id:
                 if not is_member_ready:
                     await self.bot.db.execute(
@@ -538,6 +543,7 @@ class ready_button(discord.ui.View):
                 message_id = $1 
                 """, self.message.id
             )
+
             use1r = await self.bot.db.fetchval(
                 """
                 SELECT member_ready 
@@ -568,9 +574,10 @@ class ready_button(discord.ui.View):
                 text1 = '\n'.join(text)
 
                 embed = discord.Embed(title='``duel``',
-                                      description=f'>>> you have {custimastion_time} min to make best meme **check your dms**')
+                                      description=f'>>> you have {custimastion_time} min to make best meme **check '
+                                                  f'your dms**')
                 await self.message.edit(embed=embed, view=None)
-                await self.load_img(interaction,customization_time=custimastion_time,voting_time=vote_time)
+                await self.load_img(interaction, customization_time=custimastion_time, voting_time=vote_time)
 
             else:
                 text1 = '\n'.join(text)
@@ -635,7 +642,7 @@ class ready_button(discord.ui.View):
                 await self.message.edit(embed=embed)
             else:
                 await interaction.followup.send('you cant refresh any more', ephemeral=True)
-        print(member_refresh, user_refresh)
+
         user_refresh = await self.bot.db.fetchval("""SELECT r_user_ready FROM test.duel WHERE message_id = $1""",
                                                   self.message.id)
         member_refresh = await self.bot.db.fetchval("""SELECT r_member_ready FROM test.duel WHERE message_id = $1""",
@@ -674,13 +681,14 @@ class ready_button(discord.ui.View):
     async def on_timeout(self) -> None:
         try:
             await self.message.delete()
-        except discord.Forbidden or discord.HTTPException or discord.NotFound:
+        except :
             print('yes')
         else:
             await self.message.channel.send(f'aborting the battle {self.user.mention} {self.member.mention}')
 
+
     async def on_error(self, interaction: discord.Interaction, error: Exception, item) -> None:
-        if not interaction.response.is_dont():
+        if not interaction.response.is_done():
             await interaction.response.send_message('something went wrong', ephemeral=True)
         else:
             await interaction.followup.send('something went wrong', ephemeral=True)

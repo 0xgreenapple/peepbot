@@ -25,15 +25,16 @@ class Context(commands.Context):
 
         if not colour:
             colour = self.bot.embed_colour
-
-        embed = discord.Embed(title=title, description=description, timestamp=timestamp, colour=colour)
+        if description:
+            embed = discord.Embed(description=f"{self.bot.right} {description}", timestamp=timestamp, colour=colour)
+        else:
+            embed = discord.Embed( timestamp=timestamp, colour=colour)
 
         if error_name and error_dis:
             error_name = f"__**{error_name}**__"
-            error_dis = f"{right_emoji} {error_dis}"
+            error_dis = f"{self.bot.right} {error_dis}"
             embed.add_field(name=error_name, value=error_dis)
 
-        embed.set_footer(text='\u200b', icon_url=self.author.avatar.url)
         await self.send(embed=embed)
 
 
