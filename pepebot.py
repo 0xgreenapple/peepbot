@@ -63,7 +63,7 @@ class pepebot(commands.Bot):
 
             ),
 
-            application_id=1004838979952193586,
+            application_id=958334261541343262,
             help_command=None,
 
         )
