@@ -125,7 +125,7 @@ class pepebot(commands.Bot):
         self.loop.create_task(
             self.startup_tasks(), name="Bot startup tasks"
         )
-        COGS = ['duel','setup1','help','creation','error handler']
+        COGS = ['duel', 'setup1', 'help', 'creation', 'error handler']
         self.console_log("loading cogs..")
         for cog in COGS:
             await self.load_extension(f"cogs.{cog}")
@@ -151,6 +151,7 @@ class pepebot(commands.Bot):
         await self.db.execute("CREATE SCHEMA IF NOT EXISTS test")
         await self.db.execute(
             """
+
             CREATE TABLE IF NOT EXISTS test.duel(
                 user_id1      BIGINT NOT NULL,
                 user_id2      BIGINT NOT NULL,
@@ -167,7 +168,6 @@ class pepebot(commands.Bot):
 
         await self.db.execute(
             """
-    
             CREATE TABLE IF NOT EXISTS test.leaderboard(
                 guild_id1     BIGINT NOT NULL,
                 user_id1      BIGINT NOT NULL,

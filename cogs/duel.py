@@ -74,7 +74,9 @@ class duel(commands.Cog):
             fetch first 10 rows only
             """, ctx.guild.id
         )
-        if msg is None:
+
+
+        if len(msg) == 0:
             await ctx.error_embed(description='the leaderboard for this guild is currently not available')
             return
 

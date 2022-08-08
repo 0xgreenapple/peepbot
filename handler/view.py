@@ -82,7 +82,7 @@ class duel_button(discord.ui.View):
             view = View()
             url = discord.ui.Button(url=sent_message_url, label='message')
             view.add_item(url)
-            if  interaction.message.channel.type == discord.ChannelType.private:
+            if interaction.message.channel.type == discord.ChannelType.private:
                 await interaction.message.delete()
                 await interaction.followup.send(f'you are ready,lets move!', view=view, ephemeral=True)
         else:
@@ -96,13 +96,11 @@ class duel_button(discord.ui.View):
 
             await self.message.edit(content=f'{interaction.user.mention} rejected the invite find another participant!',
                                     view=None)
-            if  interaction.message.channel.type == discord.ChannelType.private:
+            if interaction.message.channel.type == discord.ChannelType.private:
                 await interaction.message.delete()
                 await interaction.response.send_message('successfully canceled the match', ephemeral=True)
         else:
-            await interaction.response.send_message('this is not for you',ephemeral=True)
-
-
+            await interaction.response.send_message('this is not for you', ephemeral=True)
 
     async def on_timeout(self) -> None:
         try:
@@ -111,8 +109,14 @@ class duel_button(discord.ui.View):
                 description=f">>> **{self.bot.right} you failed to accept the meme battle invite in time** \n"
                             f"invited by: {self.user.mention}"
             )
+            embed1 = discord.Embed(
+                title='``timeout``',
+                description=f">>> **{self.bot.right} {self.user.mention} failed to accept the meme battle invite in time** "
 
+            )
             await self.interaction_message.edit(embed=embed, view=None)
+            await self.message.edit(embed=embed1,content=None)
+
 
         except:
             pass
@@ -681,11 +685,10 @@ class ready_button(discord.ui.View):
     async def on_timeout(self) -> None:
         try:
             await self.message.delete()
-        except :
+        except:
             print('yes')
         else:
             await self.message.channel.send(f'aborting the battle {self.user.mention} {self.member.mention}')
-
 
     async def on_error(self, interaction: discord.Interaction, error: Exception, item) -> None:
         if not interaction.response.is_done():
