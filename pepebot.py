@@ -125,7 +125,7 @@ class pepebot(commands.Bot):
         self.loop.create_task(
             self.startup_tasks(), name="Bot startup tasks"
         )
-        COGS = ['duel', 'setup1', 'help', 'creation', 'error handler']
+        COGS = ['duel','setup1','help','creation']
         self.console_log("loading cogs..")
         for cog in COGS:
             await self.load_extension(f"cogs.{cog}")

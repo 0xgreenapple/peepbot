@@ -25,20 +25,21 @@ class duel_button(discord.ui.View):
                  user: discord.Member,
                  bot: pepebot.pepebot
                  ):
-        super().__init__(timeout=3600)
+        super().__init__(timeout=10*60)
+
         self.message: discord.Message = message
         self.interaction_message = None
         self.member: discord.Member = member
         self.user: discord.Member = user
         self.bot = bot
 
-    @discord.ui.button(label='accept', style=discord.ButtonStyle.green)
+    @discord.ui.button(label='accept', style=discord.ButtonStyle.blurple)
     async def accept(self, interaction: discord.Interaction, button):
 
         if interaction.user.id == self.member.id:
             await interaction.response.defer()
-            sent_message_url = self.message.jump_url
 
+            sent_message_url = self.message.jump_url
             embed = discord.Embed(
                 title=f'``Duel``',
                 description=f'>>> you have 10 min to make best meme from '
@@ -111,11 +112,12 @@ class duel_button(discord.ui.View):
             )
             embed1 = discord.Embed(
                 title='``timeout``',
-                description=f">>> **{self.bot.right} {self.user.mention} failed to accept the meme battle invite in time** "
+                description=f">>> **{self.bot.right} {self.user.mention} failed to accept the meme battle invite in "
+                            f"time** "
 
             )
             await self.interaction_message.edit(embed=embed, view=None)
-            await self.message.edit(embed=embed1,content=None)
+            await self.message.edit(embed=embed1, content=None)
 
 
         except:
@@ -139,7 +141,7 @@ class ready_button(discord.ui.View):
                  memes: list
 
                  ):
-        super().__init__(timeout=10 * 60)
+        super().__init__(timeout=60*15)
         self.message: discord.Message = message
         self.member: discord.Member = member
         self.user: discord.Member = user
@@ -156,12 +158,13 @@ class ready_button(discord.ui.View):
         first_caption = ''
         secondcaption = ''
 
-        if message2.first:
-            first_caption = ' '.join(message2.first)
-        if message2.second:
-            secondcaption = ''.join(message2.second)
-        if message3 is None:
-            message3 = ''
+        if len(message2) == 2:
+            first_caption = ''.join(message2[0])
+            secondcaption = ''.join(message2[1])
+
+        elif len(message2) ==1:
+            first_caption = ''.join(message2[0])
+
         password = os.environ.get('IMAGEPASS')
         username = os.environ.get('IMAGEUSER')
 
@@ -193,6 +196,7 @@ class ready_button(discord.ui.View):
             method='GET',
             url='https://api.imgflip.com/get_memes'
         )
+
         json = await a.json()
         memes = json['data']['memes']
         ids = []
@@ -215,13 +219,16 @@ class ready_button(discord.ui.View):
             name=f'{self.member.name} room',
             type=discord.ChannelType.private_thread
             if interaction.guild.premium_tier >= 2
-            else discord.ChannelType.public_thread
+            else discord.ChannelType.public_thread,
+            auto_archive_duration=1440
         )
+
         thread_two = await self.message.channel.create_thread(
             name=f'{self.user.name} room',
             type=discord.ChannelType.private_thread
             if interaction.guild.premium_tier >= 2
-            else discord.ChannelType.public_thread
+            else discord.ChannelType.public_thread,
+            auto_archive_duration=1440
         )
 
         # create dms
@@ -248,8 +255,8 @@ class ready_button(discord.ui.View):
         sendembed = discord.Embed(
             title="``duel``",
             description='>>> you have 5 min to make best meme from this template \n'
-                        'run ``$caption --first <your first caption> --second <your second caption>`` \n'
-                        'example: **$caption --first yo momma sa fat that she cant even run --second lol**'
+                        'run ``$caption <your first caption>,<your second caption>`` \n'
+                        'separate with comma (.) for bottom text'
         )
         password = os.environ.get('IMAGEPASS')
         username = os.environ.get('IMAGEUSER')
@@ -261,6 +268,7 @@ class ready_button(discord.ui.View):
             'text0': f'first',
             'text1': f'second',
         }
+
         res = self.bot.aiohttp_session
         response = await res.request('POST', caption_url, params=params)
         json = await response.json()
@@ -281,6 +289,7 @@ class ready_button(discord.ui.View):
         users = []
         first_user_submission = []
         second_user_submission = []
+
         announcement_id = await self.bot.db.fetchval(
             """SELECT announcement FROM test.setup
                 WHERE guild_id1 = $1""", interaction.guild.id
@@ -289,60 +298,40 @@ class ready_button(discord.ui.View):
             """SELECT vote FROM test.setup
                 WHERE guild_id1 = $1""", interaction.guild.id
         )
-        if not announcement_id is None:
-            announcement = self.bot.get_channel(announcement_id)
-        else:
-            announcement = self.message.channel
+        announcement = self.bot.get_channel(announcement_id) \
+            if announcement_id else self.message.channel
 
-        if not vote_id is None:
-            vote = self.bot.get_channel(vote_id)
-        else:
-            vote = self.message.channel
+        vote = self.bot.get_channel(vote_id) \
+            if vote_id else self.message.channel
 
         def check(message: discord.Message) -> bool:
-            if self.member.id == self.user.id:
-                print('yes')
-            args = message.content[8:]
+
             if message.author.id == self.member.id and message.content.startswith(
                     '$caption') and message.channel.id == t_one.channel.id:
-                parser = Arguments(add_help=False, allow_abbrev=False)
-                parser.add_argument('--first', '--f', nargs='+')
-                parser.add_argument('--second', '--s', nargs='+')
+                failed = True
+                spilt = message.content[8:].split(',')
                 failed = False
-                try:
-                    args = parser.parse_args(shlex.split(message.content[8:]))
-                except Exception as e:
-                    self.bot.loop.create_task(message.channel.send(str(e)))
-                    failed = True
-
                 if not failed:
                     users_msg.append(f"{message.author.mention} has completed")
                     checks.append(message.author.id)
-                    users.append({'message': args, 'id': message.author.id})
+                    users.append({'message': spilt, 'id': message.author.id})
                     self.bot.loop.create_task(t_one.channel.send('submitted'))
 
             if message.author.id == self.user.id and message.content.startswith(
                     '$caption') and message.channel.id == t_two.channel.id:
-                parser = Arguments(add_help=False, allow_abbrev=False)
-                parser.add_argument('--first', '--f', nargs='+')
-                parser.add_argument('--second', '--s', nargs='+')
+                failed = True
+                spilt = message.content[8:].split(',')
                 failed = False
-                args = message.content[8]
-                try:
-                    args = parser.parse_args(shlex.split(message.content[8:]))
-                except Exception as e:
-                    self.bot.loop.create_task(message.channel.send(str(e)))
-                    failed = True
                 if not failed:
                     users_msg.append(f"{message.author.mention} has completed")
                     checks.append(message.author.id)
-                    users.append({'message': args, 'id': message.author.id})
+                    users.append({'message': spilt, 'id': message.author.id})
                     self.bot.loop.create_task(t_two.channel.send('submitted'))
 
             return len(checks) == 2
 
         try:
-            await self.bot.wait_for(f'message', timeout=customization_time * 60, check=check)
+            await self.bot.wait_for(f'message', timeout= customization_time*60, check=check)
         except asyncio.TimeoutError:
             if len(users) != 0:
                 user_id = users[0]['id']
@@ -352,23 +341,50 @@ class ready_button(discord.ui.View):
                     memeid=memeid, message2=users[0]['message'],
                     url=caption_url
                 )
-                failed_user = self.user if user.id == self.user else self.member
+                failed_user = self.user if user.id != self.user.id else self.member
                 try:
                     await self.message.delete()
+
                 except discord.Forbidden:
                     pass
                 await announcement.send(
                     f'by {user.mention} won the duel, {failed_user.mention} failed in time',
                     file=first_user_submission
                 )
+                try:
+                    await thread_one.delete()
+                except:
+                    pass
+                try:
+                    await thread_two.delete()
+                except:
+                    pass
+
+                await self.bot.db.execute(
+                    """
+                    INSERT INTO test.leaderboard(user_id1,guild_id1,likes)
+                    VALUES($1,$2,$3)
+                    ON CONFLICT (guild_id1,user_id1) DO
+                    UPDATE SET likes = COALESCE(leaderboard.likes, 0) + $3 ;
+                    """, failed_user.id, interaction.guild.id, 1
+                )
+
             else:
                 try:
                     await self.message.delete()
                 except:
                     pass
+                try:
+                    await thread_one.delete()
+                except:
+                    pass
+                try:
+                    await thread_two.delete()
+                except:
+                    pass
                 await self.message.channel.send(
-                    f'{self.user.mention} and {self.member.mention} both failed to make meme in 5 min lol',
-                    delete_after=30
+                    f'{self.user.mention} and {self.member.mention} both failed to make meme in {customization_time} min lol',
+                    delete_after=60
                 )
 
             return
@@ -379,8 +395,6 @@ class ready_button(discord.ui.View):
                 memeid=memeid, message2=users[0]['message'],
                 url=caption_url
             )
-
-
         elif users[0]['id'] == self.member.id:
             print(t_two)
             second_user_submission = await self.get_player_img(
@@ -403,7 +417,7 @@ class ready_button(discord.ui.View):
 
         try:
             await self.message.delete()
-        except discord.Forbidden:
+        except:
             pass
 
         first_submission = await vote.send(
@@ -424,12 +438,16 @@ class ready_button(discord.ui.View):
         await t_one.edit(embeds=[embeed], attachments=[], view=None)
         await t_two.edit(embeds=[embeed], attachments=[], view=None)
         await asyncio.sleep(3)
-        self.bot.loop.create_task(thread_one.delete())
-        self.bot.loop.create_task(thread_two.delete())
 
-        sleep_until = datetime.now() + timedelta(seconds=20)
+        try:
+            self.bot.loop.create_task(thread_one.delete())
+            self.bot.loop.create_task(thread_two.delete())
+        except:
+            pass
 
+        sleep_until = datetime.now() + timedelta(seconds=voting_time*60)
         await discord.utils.sleep_until(sleep_until)
+
         x_msg = await vote.fetch_message(first_submission.id)
         y_msg = await vote.fetch_message(second_submission.id)
 
@@ -444,6 +462,7 @@ class ready_button(discord.ui.View):
             if reaction.emoji.id == 1004443231762776114:
                 count2 = reaction.count
                 break
+
         print(x_msg.reactions)
         print(y_msg.reactions)
         if count1 > count2:
@@ -517,11 +536,25 @@ class ready_button(discord.ui.View):
             await interaction.response.defer()
             is_user_ready = False
             is_member_ready = False
+            member1 = await self.bot.db.fetchval(
+                """
+                SELECT user_ready 
+                FROM test.duel WHERE 
+                message_id = $1 
+                """, self.message.id
+            )
+
+            use1r = await self.bot.db.fetchval(
+                """
+                SELECT member_ready 
+                FROM test.duel WHERE 
+                message_id = $1 
+                """, self.message.id)
             member = self.bot.get_user(self.member.id)
             user = self.bot.get_user(self.user.id)
             desc = self.embed_msg.description
             if interaction.user.id == user.id:
-                if not is_user_ready:
+                if not use1r:
                     await self.bot.db.execute(
                         """UPDATE test.duel SET member_ready=$1 WHERE message_id = $2""",
                         True, self.message.id
@@ -530,7 +563,7 @@ class ready_button(discord.ui.View):
                     await interaction.followup.send('you are already ready', ephemeral=True)
 
             if interaction.user.id == member.id:
-                if not is_member_ready:
+                if not member1:
                     await self.bot.db.execute(
                         """UPDATE test.duel SET user_ready=$1 WHERE message_id = $2""",
                         True, self.message.id

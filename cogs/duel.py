@@ -28,7 +28,7 @@ class duel(commands.Cog):
     @commands.command(name='battle')
     @commands.guild_only()
     @commands.bot_has_permissions(manage_channels=True, manage_threads=True)
-    @commands.cooldown(2, 260, BucketType.member)
+    @commands.cooldown(2, 160, BucketType.member)
     async def duel(self, ctx: Context, member: discord.Member):
         if member.id == ctx.author.id:
             await ctx.error_embed(
@@ -192,7 +192,8 @@ class duel(commands.Cog):
 
         embed = discord.Embed(
             title=f'``{member1.name}`` stats',
-            description=f'>>> {self.bot.right} **User**:{member1.mention}'
+            description=f'>>> {self.bot.right} **User**:{member1.mention} \n'
+                        f'**upvotes**:{likes}'
                         f'\n{msg} '
 
         )

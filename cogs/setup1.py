@@ -107,6 +107,12 @@ class setup_memme(commands.Cog):
     @setup_command.command(name='vote_time')
     @commands.has_permissions(manage_guild=True)
     async def vote_time(self, ctx: Context, voting_time: int):
+        if voting_time > 60:
+            await ctx.error_embed(
+                description='the time must be under 1 hours'
+            )
+            return
+
 
         await self.bot.db.execute(
             """
@@ -127,6 +133,11 @@ class setup_memme(commands.Cog):
     @setup_command.command(name='customization_time')
     @commands.has_permissions(manage_guild=True)
     async def customisation_time(self, ctx: Context, customisation_time: int):
+        if customisation_time > 15:
+            await ctx.error_embed(
+                description='the time must be under 15 min'
+            )
+            return
 
         await self.bot.db.execute(
             """

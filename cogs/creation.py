@@ -204,9 +204,9 @@ class creation(commands.Cog):
         a = 1 / 0
         return a
 
-    @commands.command(name='caption')
+    @commands.command(name='meme')
     @commands.cooldown(1, 3, BucketType.user)
-    async def caption(self, ctx: Context, file: typing.Optional[discord.Attachment], *, caption: str):
+    async def meme(self, ctx: Context, file: typing.Optional[discord.Attachment], *, caption: str):
 
         randomemoji = random.choice([self.bot.spongebob, self.bot.doge])
         a = await get_attachments(ctx=ctx)
