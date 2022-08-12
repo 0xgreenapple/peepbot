@@ -4,6 +4,7 @@ import os
 import random
 import typing
 from io import BytesIO
+import re
 
 import aiohttp
 import discord
@@ -28,28 +29,30 @@ class leaderboard(SimplePages):
 async def image_or_embed(message: discord.Message):
     embeds = message.embeds
     attachments = message.attachments
-    if attachments:
+    emojis = re.findall(r'<(?P<animated>a?):(?P<name>[a-zA-Z0-9_]{2,32}):(?P<id>[0-9]{18,22})>', message.content)
+    sticlers = message.stickers
 
-        image = None
+    image = None
+    if attachments:
         for attachment in attachments:
             if attachment.content_type.lower().startswith('image'):
                 image = attachment
             break
-        return image
-
     elif embeds:
-
-        image = None
-
         for embed in embeds:
 
             if embed.type == 'image' or embed.type == 'gifv':
                 image = embed
-
             break
-        return image
-    else:
-        return None
+    elif len(emojis):
+        is_animated = True if emojis[0][0].lower() == 'a' else False
+        first_emoji = discord.PartialEmoji(name=emojis[0][1],id=emojis[0][2],animated=is_animated)
+        if not first_emoji.is_unicode_emoji():
+            image = first_emoji
+    elif len(sticlers):
+        image = sticlers[0]
+
+    return image
 
 
 async def get_attachments(ctx: Context):
@@ -63,24 +66,42 @@ async def get_attachments(ctx: Context):
         resolved = refmessage.resolved
 
         attachment = await image_or_embed(resolved)
+        print(attachment)
 
         if attachment is not None:
-            if isinstance(attachment, discord.Embed):
+            if isinstance(attachment, (discord.Embed,discord.PartialEmoji,discord.StickerItem)):
+                print('yes')
                 result = attachment
             elif attachment.content_type.lower().startswith('image'):
                 result = attachment
+
+
         return result
 
-    else:
+    elif not refmessage:
         attachment = await image_or_embed(ctx.message)
         if attachment is not None:
-            if isinstance(attachment, discord.Embed):
+            if isinstance(attachment, (discord.Embed,discord.PartialEmoji,discord.StickerItem)):
                 result = attachment
             elif attachment.content_type.lower().startswith('image'):
-
                 result = attachment
+        else:
+            messages = ctx.channel.history(limit=100)
+            async for i in messages:
+                i: discord.Message
+                message = await image_or_embed(i)
+                if message:
+                    result = message
+                    break
 
         return result
+    else:
+        a = await ctx.channel.history(limit=100)
+        for i in a:
+            i: discord.Message
+            message = await image_or_embed(i)
+            if message:
+                break
 
 
 async def get_image(header: str, url: str, bot: pepebot = None):
@@ -139,7 +160,7 @@ async def caption_image(
 
 async def handle_process(
         ctx: Context, type: str, bot: pepebot, *, file: discord.Attachment = None,
-        embed: typing.Union[discord.Attachment, discord.Embed]=None):
+        embed: typing.Union[discord.Attachment, discord.Embed] = None):
     randomemoji = random.choice([bot.spongebob, bot.doge])
 
     if file:
@@ -162,7 +183,7 @@ async def handle_process(
     elif embed:
         message = await ctx.send(f'this will take some time {randomemoji}')
 
-        if isinstance(embed, discord.Embed):
+        if isinstance(embed, (discord.Embed,discord.PartialEmoji,discord.StickerItem)):
             response = await get_image(header=type, url=embed.url, bot=bot)
             ab = await response.read()
             try:
@@ -195,7 +216,6 @@ async def handle_process(
         return
 
 
-
 class creation(commands.Cog):
     def __init__(self, bot: pepebot) -> None:
         self.bot = bot
@@ -203,6 +223,8 @@ class creation(commands.Cog):
     async def errorr(self):
         a = 1 / 0
         return a
+
+
 
     @commands.command(name='meme')
     @commands.cooldown(1, 3, BucketType.user)
@@ -268,7 +290,6 @@ class creation(commands.Cog):
         a = await get_attachments(ctx=ctx)
         type = 'spin'
         if not file and not a:
-
             await ctx.send('give me something to edit must be image or gif')
             return
         if file:
@@ -277,7 +298,6 @@ class creation(commands.Cog):
                 return
 
         await handle_process(ctx, type, self.bot, file=file, embed=a)
-
 
     @commands.command(name='cube')
     @commands.cooldown(1, 3, BucketType.user)
@@ -294,7 +314,6 @@ class creation(commands.Cog):
                 return
 
         await handle_process(ctx, type, self.bot, file=file, embed=a)
-
 
     @commands.command(name='sphere')
     @commands.cooldown(1, 3, BucketType.user)
@@ -347,8 +366,6 @@ class creation(commands.Cog):
                 return
 
         await handle_process(ctx, type, self.bot, file=file, embed=a)
-
-
 
     @commands.command(name='bomb')
     @commands.cooldown(1, 3, BucketType.user)
@@ -986,7 +1003,6 @@ class creation(commands.Cog):
             return
         if file:
             if not file.content_type.startswith('image'):
-
                 await ctx.send('give me something to edit must be image or gif')
                 return
 
@@ -1171,6 +1187,7 @@ class creation(commands.Cog):
                 return
 
         await handle_process(ctx, type, self.bot, file=file, embed=a)
+
 
 async def setup(bot: pepebot) -> None:
     await bot.add_cog(

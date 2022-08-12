@@ -125,7 +125,7 @@ class pepebot(commands.Bot):
         self.loop.create_task(
             self.startup_tasks(), name="Bot startup tasks"
         )
-        COGS = ['duel','setup1','help','creation','listeners','error handler']
+        COGS = ['duel','setup1','help','creation','listeners','economy','server']
         self.console_log("loading cogs..")
         for cog in COGS:
             await self.load_extension(f"cogs.{cog}")
@@ -172,7 +172,16 @@ class pepebot(commands.Bot):
                 guild_id1     BIGINT NOT NULL,
                 user_id1      BIGINT NOT NULL,
                 likes         BIGINT DEFAULT 0,
-                 PRIMARY KEY (guild_id1,user_id1)
+                PRIMARY KEY (guild_id1,user_id1)
+            )
+        """)
+        await self.db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test.utils(
+                guild_id1     BIGINT NOT NULL,
+                role_id1      BIGINT,
+                active         BOOLEAN DEFAULT FALSE,
+                PRIMARY KEY (guild_id1)
             )
         """)
 
@@ -188,6 +197,15 @@ class pepebot(commands.Bot):
                 vote_time         BIGINT DEFAULT 10,
                 customization_time BIGINT DEFAULT 5,
                 PRIMARY KEY (guild_id1)
+            )
+        """)
+        await self.db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test.economy(
+                guild_id          BIGINT NOT NULL,
+                user_id           BIGINT NOT NULL,
+                points            BIGINT DEFAULT 0,
+                PRIMARY KEY (guild_id,user_id)
             )
         """)
 

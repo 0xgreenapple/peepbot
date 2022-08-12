@@ -63,10 +63,15 @@ class help(commands.Cog):
         f"> **max time to vote:**{vote_time if vote_time else '20'}m \n \n"
         "<:right:975326725158346774> ``$stats <optional user>`` \n"
         "> see your or a user stats and rank on the leaderboard \n \n"
-        "<:right:975326725158346774> ``$leaderboard``  \n"
+        "<:right:975326725158346774> ``$meme_lb``  \n"
         "> see the leaderboard sorted by top members \n \n"
         "<:right:975326725158346774> ``$template`` \n"
-        "> get a random meme template")
+        "> get a random meme template"
+        "<:right:975326725158346774> ``$leaderboard`` \n"
+        "> see the leaderboard sorted by points"
+        "<:right:975326725158346774> ``$bal`` \n"
+        "> see how mnay points you or a user have"
+        )
 
         # embed.set_thumbnail(url=self.bot.user.avatar.url)
         await ctx.send(embed=embed)

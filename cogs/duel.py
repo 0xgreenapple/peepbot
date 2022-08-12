@@ -64,7 +64,7 @@ class duel(commands.Cog):
                 content=f"{member.mention} you have 20 min to accept the invite click on "
                         f"accept ", view=view)
 
-    @commands.command(name='leaderboard')
+    @commands.command(name='meme_lb')
     async def leaderboard(self, ctx: Context):
 
         msg = await self.bot.db.fetch(

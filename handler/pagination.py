@@ -11,14 +11,15 @@ from pepebot import pepebot
 if TYPE_CHECKING:
     from handler.Context import Context
 
+
 class RoboPages(discord.ui.View):
     def __init__(
-        self,
-        source: menus.PageSource,
-        *,
-        ctx: Context,
-        check_embeds: bool = True,
-        compact: bool = False,
+            self,
+            source: menus.PageSource,
+            *,
+            ctx: Context,
+            check_embeds: bool = True,
+            compact: bool = False,
     ):
         super().__init__()
         self.source: menus.PageSource = source
@@ -33,7 +34,6 @@ class RoboPages(discord.ui.View):
 
     def fill_items(self) -> None:
 
-
         if self.source.is_paginating():
             max_pages = self.source.get_max_pages()
             use_last_and_first = max_pages is not None and max_pages >= 2
@@ -44,7 +44,6 @@ class RoboPages(discord.ui.View):
             self.add_item(self.go_to_next_page)
             if use_last_and_first:
                 self.add_item(self.go_to_last_page)
-
 
     async def _get_kwargs_from_page(self, page: int) -> Dict[str, Any]:
         value = await discord.utils.maybe_coroutine(self.source.format_page, self, page)
@@ -109,7 +108,8 @@ class RoboPages(discord.ui.View):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user and interaction.user.id in (self.ctx.bot.owner_id, self.ctx.author.id):
             return True
-        await interaction.response.send_message('This pagination menu cannot be controlled by you, sorry!', ephemeral=True)
+        await interaction.response.send_message('This pagination menu cannot be controlled by you, sorry!',
+                                                ephemeral=True)
         return False
 
     async def on_timeout(self) -> None:
@@ -158,9 +158,6 @@ class RoboPages(discord.ui.View):
         await self.show_page(interaction, self.source.get_max_pages() - 1)  # type: ignore
 
 
-
-
-
 class FieldPageSource(menus.ListPageSource):
     """A page source that requires (field_name, field_value) tuple items."""
 
@@ -202,7 +199,6 @@ class SimplePageSource(menus.ListPageSource):
     async def format_page(self, menu, entries):
         pages = []
         for index, entry in enumerate(entries, start=menu.current_page * self.per_page):
-
             pages.append(f'{index + 1}. {entry[0]} **likes**: ``{entry[1]}``')
 
         maximum = self.get_max_pages()
@@ -211,7 +207,23 @@ class SimplePageSource(menus.ListPageSource):
             menu.embed.set_footer(text=footer)
 
         menu.embed.description = '\n'.join(pages)
-        menu.embed.title= f'**memes leaderboard** ``{len(pages)}``'
+        menu.embed.title = f'**memes leaderboard** ``{len(pages)}``'
+        return menu.embed
+
+
+class balleaderboard(menus.ListPageSource):
+    async def format_page(self, menu, entries):
+        pages = []
+        for index, entry in enumerate(entries, start=menu.current_page * self.per_page):
+            pages.append(f'{index + 1}. {entry[0]} <a:aSDVstardrop:1007680622292123781> **points**: ``{entry[1]}``')
+
+        maximum = self.get_max_pages()
+        if maximum > 1:
+            footer = f'Page {menu.current_page + 1}/{maximum} ({len(self.entries)} entries)'
+            menu.embed.set_footer(text=footer)
+
+        menu.embed.description = '\n'.join(pages)
+        menu.embed.title = f'**leaderboard of memesaurus** ``{len(pages)}``'
         return menu.embed
 
 
@@ -222,4 +234,14 @@ class SimplePages(RoboPages):
 
     def __init__(self, entries, *, ctx: Context, per_page: int = 12):
         super().__init__(SimplePageSource(entries, per_page=per_page), ctx=ctx)
+        self.embed = discord.Embed(colour=discord.Colour.blurple())
+
+
+class bal_leaderboard(RoboPages):
+    """A simple pagination session reminiscent of the old Pages interface.
+    Basically an embed with some normal formatting.
+    """
+
+    def __init__(self, entries, *, ctx: Context, per_page: int = 12):
+        super().__init__(balleaderboard(entries, per_page=per_page), ctx=ctx)
         self.embed = discord.Embed(colour=discord.Colour.blurple())

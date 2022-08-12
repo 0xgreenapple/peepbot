@@ -39,12 +39,62 @@ class setup_memme(commands.Cog):
                         f'``$setup vote_time <time_in_minutes>`` : \nset voting time \n'
                         f'``$setup customization_time  <time_in_minutes>``:\n setup customisation time\n'
                         f'``$setup meme  <channel>``:\n setup meme channel to pin messages \n'
-                        f'``$setup meme_listener <true_or_false> ``: \ndisable OC meme listener'
+                        f'``$setup meme_listener <true_or_false> ``: \ndisable OC meme listener \n'
+                        f'``$setup deadchat <true_or_false> ``: \ndisable deadchat  listener \n'
+                        f'``$setup deadchat_role <role> ``: \n specify deadchat ping role'
         )
         await ctx.send(embed=embed)
 
 
 
+    @setup_command.command(name='deadchat_role')
+    @commands.has_permissions(manage_guild=True)
+    async def deadchat_role(self, ctx: Context, role: discord.Role):
+
+        await self.bot.db.execute(
+            """ 
+                INSERT INTO test.utils(guild_id1,role_id1)
+                VALUES($1,$2)
+                ON CONFLICT (guild_id1) DO
+                UPDATE SET role_id1 = $2
+            """, ctx.guild.id, role.id
+        )
+
+        embed = discord.Embed(
+            title='``deadchat listener``',
+            description=f"{self.bot.right} deadchat role has been updated to ``{role.mention}`` \n"
+        )
+
+        await ctx.send(embed=embed)
+
+    @setup_command.command(name='deadchat')
+    @commands.has_permissions(manage_guild=True)
+    async def deadchat_disable(self, ctx: Context, type: typing.Literal['true', 'false']):
+        if type == 'true':
+            await self.bot.db.execute(
+                """ 
+                    INSERT INTO test.utils(guild_id1,active)
+                    VALUES($1,$2)
+                    ON CONFLICT (guild_id1) DO
+                    UPDATE SET active = $2
+                """, ctx.guild.id, True
+            )
+        elif type == 'false':
+            await self.bot.db.execute(
+                """ 
+                    INSERT INTO test.utils(guild_id1,active)
+                    VALUES($1,$2)
+                    ON CONFLICT (guild_id1) DO
+                    UPDATE SET active = $2
+                """, ctx.guild.id, False
+            )
+        embed = discord.Embed(
+            title='``deadchat listener``',
+            description=f"{self.bot.right} deadchat listener has been updated to ``{type}`` \n"
+                        f"to setup role do ``$setup deadchat_role <role>``"
+        )
+
+        await ctx.send(embed=embed)
     @setup_command.command(name='meme_listener')
     @commands.has_permissions(manage_guild=True)
     async def disable_meme(self,ctx:Context, type:typing.Literal['true','false']):
