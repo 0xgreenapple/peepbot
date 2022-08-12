@@ -59,7 +59,7 @@ class economy(commands.Cog):
         )
         await ctx.send(embed=embed)
 
-    @commands.command(name='balance',aliases=['bal'])
+    @commands.command(name='balance',aliases=['bal','points'])
     @commands.cooldown(1,3,BucketType.user)
     async def balance(self,ctx:Context,user:discord.Member=None):
         member = user if user else ctx.author
@@ -80,7 +80,7 @@ class economy(commands.Cog):
         if total is None:
             embed = discord.Embed(
                 title='``stats``',
-                description=f'>>> {self.bot.right} user: {user.mention} \n'
+                description=f'>>> {self.bot.right} user: {member.mention} \n'
                             f'<a:aSDVstardrop:1007680622292123781> **total points:** 0 \n',
                 colour=discord.Colour.blurple(), timestamp=discord.utils.utcnow()
             )
