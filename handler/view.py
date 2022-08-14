@@ -3,6 +3,7 @@ import asyncio
 import io
 import random
 import shlex
+from typing import Optional
 
 import aiohttp
 import discord
@@ -728,3 +729,103 @@ class ready_button(discord.ui.View):
             await interaction.response.send_message('something went wrong', ephemeral=True)
         else:
             await interaction.followup.send('something went wrong', ephemeral=True)
+
+
+
+class interaction_delete_view(discord.ui.View):
+    def __init__(
+            self,
+            ctx: discord.Interaction,
+
+    ):
+        super().__init__(timeout=180)
+        self.ctx: discord.Interaction = ctx
+        self.message: Optional[discord.Message] = None
+
+    @discord.ui.button(label='delete', style=discord.ButtonStyle.danger)
+    async def delete_button(self, interaction: discord.Interaction, button):
+        if interaction.channel.type == discord.ChannelType.private:
+            await interaction.message.delete()
+        else:
+            if interaction.user.id == self.ctx.user.id or interaction.user.id == self.ctx.guild.owner.id:
+                await interaction.message.delete()
+                return
+            else:
+                await interaction.response.send_message('this is not for you lol', ephemeral=True)
+
+    async def on_timeout(self) -> None:
+        for item in self.children:
+            item.disabled = True
+            try:
+                if self.message:
+                    await self.message.edit(view=self)
+            except discord.NotFound:
+                pass
+
+
+class interaction_error_button(discord.ui.View):
+    def __init__(
+            self,
+            ctx: discord.Interaction,
+
+    ):
+        super().__init__(timeout=180)
+        self.message: Optional[discord.Message] = None
+        self.ctx: discord.Interaction = ctx
+
+    @discord.ui.button(label='help', style=discord.ButtonStyle.green)
+    async def help(self, interaction: discord.Interaction, button):
+        if interaction.user.id == self.ctx.user.id or interaction.user.id == self.ctx.guild.owner.id:
+            await interaction.response.send_message("no help?")
+            return
+        else:
+            await interaction.response.send_message('this is not for you lol', ephemeral=True)
+
+    async def on_timeout(self) -> None:
+        for item in self.children:
+            item.disabled = True
+            try:
+                await self.message.edit(view=self)
+            except discord.NotFound:
+                pass
+
+
+
+class accept_bought(discord.ui.View):
+    def __init__(
+            self,
+            bot: pepebot.pepebot,
+            item:str,
+            user:discord.Member
+
+    ):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.item_name =item
+        self.user_id = user
+
+    @discord.ui.button(label='accept', style=discord.ButtonStyle.green)
+    async def accept(self, interaction: discord.Interaction, button):
+        if interaction.user.id == 792917906165727264 or interaction.user.id == 888058231094665266:
+            await interaction.response.defer(ephemeral=True)
+            await self.bot.db.execute('DELETE FROM test.inv WHERE user_id = $1 AND guild_id=$2 AND items = $3 ',
+                                      self.user_id.id,self.user_id.guild.id,self.item_name)
+
+            await interaction.delete_original_message()
+            await interaction.followup.send('done')
+
+            return
+        else:
+            await interaction.response.send_message('this is not for you lol', ephemeral=True)
+
+    @discord.ui.button(label='cancel', style=discord.ButtonStyle.red)
+    async def cancel(self, interaction: discord.Interaction, button):
+        if interaction.user.id == 792917906165727264 or interaction.user.id == 888058231094665266:
+            await interaction.delete_original_message()
+            await interaction.response.send_message('done',ephemeral=True)
+            return
+        else:
+            await interaction.followup.send_message('this is not for you lol', ephemeral=True)
+
+
+

@@ -108,6 +108,12 @@ class pepebot(commands.Bot):
         self.moderator_emoji = "<:icons8protect100:975326725502296104>"
         self.spongebob = "<:AYS_sadspongebob:1005427777345949717>"
         self.doge = "<a:DogeDance:1005429259017392169>"
+        self.like = '<:plusOne:1008402662070427668>'
+        self.dislike = '<:dislike:1008403162874515649>'
+        self.coin = '<a:coin1:1008074318082752583>'
+        self.custom_pfp = '<:SDVchargunther:1008419132636663910>'
+        self.shoutout = '<:AYS_WumpsShoutOut:1008421369379311767>'
+        self.chect = '<:SDVitemtreasure:1008374574502658110>'
 
         self.db = self.database = self.database_connection_pool = None
         self.connected_to_database = asyncio.Event()
@@ -125,7 +131,7 @@ class pepebot(commands.Bot):
         self.loop.create_task(
             self.startup_tasks(), name="Bot startup tasks"
         )
-        COGS = ['duel','setup1','help','creation','listeners','economy','server','error handler']
+        COGS = ['duel', 'setup1', 'help', 'creation', 'listeners', 'economy', 'server', 'error handler']
         self.console_log("loading cogs..")
         for cog in COGS:
             await self.load_extension(f"cogs.{cog}")
@@ -187,18 +193,24 @@ class pepebot(commands.Bot):
 
         await self.db.execute(
             """
-    
+            
             CREATE TABLE IF NOT EXISTS test.setup(
                 guild_id1     BIGINT NOT NULL,
                 announcement      BIGINT,
                 vote              BIGINT,
                 memechannel       BIGINT,
+                thread_channel    BIGINT,
+                reaction_ls       BOOLEAN DEFAULT FALSE,
+                reaction_channel  BIGINT[],
+                shop_log          BIGINT,
+                thread_ls         BOOLEAN DEFAULT FALSE,
                 listener          BOOLEAN DEFAULT FALSE,
                 vote_time         BIGINT DEFAULT 10,
                 customization_time BIGINT DEFAULT 5,
                 PRIMARY KEY (guild_id1)
             )
         """)
+
         await self.db.execute(
             """
             CREATE TABLE IF NOT EXISTS test.economy(
@@ -206,6 +218,26 @@ class pepebot(commands.Bot):
                 user_id           BIGINT NOT NULL,
                 points            BIGINT DEFAULT 0,
                 PRIMARY KEY (guild_id,user_id)
+            )
+        """)
+        await self.db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test.shop(
+                items              TEXT,
+                cost               INT NOT NULL,
+                emoji              TEXT,
+                PRIMARY KEY		   (items)
+            )
+        """)
+        await self.db.execute(
+            """
+            DROP TABLE IF EXISTS test.inv;
+            CREATE TABLE IF NOT EXISTS test.inv(
+                guild_id           BIGINT,
+                user_id            BIGINT,
+                items              TEXT,
+                PRIMARY KEY		   (items),
+                FOREIGN KEY (items) REFERENCES test.shop(items) ON DELETE CASCADE ON UPDATE CASCADE
             )
         """)
 

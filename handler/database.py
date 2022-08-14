@@ -23,7 +23,7 @@ async def create_database_connection():
     )
     await initialize_database_connection(connection)
     try:
-        print('connection')
+        print('postgres')
         yield connection
     finally:
         await connection.close()

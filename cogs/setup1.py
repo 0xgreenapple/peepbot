@@ -7,6 +7,7 @@ from io import BytesIO
 
 import aiohttp
 import discord
+from discord import app_commands
 from discord.ext import commands
 from discord.ext.commands import BucketType, cooldown
 
@@ -28,36 +29,46 @@ class setup_memme(commands.Cog):
     def __init__(self, bot: pepebot) -> None:
         self.bot = bot
 
-    @commands.group(name='setup', invoke_without_command=True)
-    @commands.has_permissions(manage_guild=True)
-    async def setup_command(self, ctx: Context):
+    setup = app_commands.Group(name='setup', description='setup commands for you', guild_only=True,
+                               default_permissions=discord.Permissions(manage_guild=True))
+
+    @setup.command(name='help', description='help related to setup command')
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.default_permissions(manage_guild=True)
+    async def setup_help(self, interaction: discord.Interaction):
         embed = discord.Embed(
             title=f'``Setup``',
             description=f'>>> {self.bot.right} **run the following commands** \n'
-                        f'``$setup vote <channel>`` : \n setup vote channel for you \n '
-                        f'``$setup announcements <channel>`` :\n setup announcement channel for you !\n'
-                        f'``$setup vote_time <time_in_minutes>`` : \nset voting time \n'
-                        f'``$setup customization_time  <time_in_minutes>``:\n setup customisation time\n'
-                        f'``$setup meme  <channel>``:\n setup meme channel to pin messages \n'
-                        f'``$setup meme_listener <true_or_false> ``: \ndisable OC meme listener \n'
-                        f'``$setup deadchat <true_or_false> ``: \ndisable deadchat  listener \n'
-                        f'``$setup deadchat_role <role> ``: \n specify deadchat ping role'
+                        f'``/setup vote <channel>`` : \n setup vote channel for you \n '
+                        f'``/setup announcements <channel>`` :\n setup announcement channel for you !\n'
+                        f'``/setup vote_time <time_in_minutes>`` : \nset voting time \n'
+                        f'``/setup customization_time  <time_in_minutes>``:\n setup customisation time\n'
+                        f'``/setup meme  <channel>``:\n setup meme channel to pin messages \n'
+                        f'``/setup meme_listener <true_or_false> ``: \ndisable OC meme listener \n'
+                        f'``/setup deadchat <true_or_false> ``: \ndisable deadchat  listener \n'
+                        f'``/setup deadchat_role <role> ``: \n specify deadchat ping role \n'
+                        f'``/setup thread <true_or_false> ``: \n disable thread  listener \n'
         )
-        await ctx.send(embed=embed)
 
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
-
-    @setup_command.command(name='deadchat_role')
-    @commands.has_permissions(manage_guild=True)
-    async def deadchat_role(self, ctx: Context, role: discord.Role):
-
+    @setup.command(name='deadchat_role', description='setup dead chat role')
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    @app_commands.describe(
+        role='deadchat ping role'
+    )
+    async def deadchat_role(self, interaction: discord.Interaction, role: discord.Role):
+        await interaction.response.defer(ephemeral=True)
         await self.bot.db.execute(
             """ 
                 INSERT INTO test.utils(guild_id1,role_id1)
                 VALUES($1,$2)
                 ON CONFLICT (guild_id1) DO
                 UPDATE SET role_id1 = $2
-            """, ctx.guild.id, role.id
+            """, interaction.guild.id, role.id
         )
 
         embed = discord.Embed(
@@ -65,11 +76,14 @@ class setup_memme(commands.Cog):
             description=f"{self.bot.right} deadchat role has been updated to ``{role.mention}`` \n"
         )
 
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
-    @setup_command.command(name='deadchat')
-    @commands.has_permissions(manage_guild=True)
-    async def deadchat_disable(self, ctx: Context, type: typing.Literal['true', 'false']):
+    @setup.command(name='deadchat',description='enable or disable dead chat command')
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def deadchat_disable(self, interaction: discord.Interaction, type: typing.Literal['true', 'false']):
+        await interaction.response.defer(ephemeral=True)
         if type == 'true':
             await self.bot.db.execute(
                 """ 
@@ -77,7 +91,7 @@ class setup_memme(commands.Cog):
                     VALUES($1,$2)
                     ON CONFLICT (guild_id1) DO
                     UPDATE SET active = $2
-                """, ctx.guild.id, True
+                """, interaction.guild.id, True
             )
         elif type == 'false':
             await self.bot.db.execute(
@@ -86,7 +100,7 @@ class setup_memme(commands.Cog):
                     VALUES($1,$2)
                     ON CONFLICT (guild_id1) DO
                     UPDATE SET active = $2
-                """, ctx.guild.id, False
+                """, interaction.guild.id, False
             )
         embed = discord.Embed(
             title='``deadchat listener``',
@@ -94,18 +108,22 @@ class setup_memme(commands.Cog):
                         f"to setup role do ``$setup deadchat_role <role>``"
         )
 
-        await ctx.send(embed=embed)
-    @setup_command.command(name='meme_listener')
-    @commands.has_permissions(manage_guild=True)
-    async def disable_meme(self,ctx:Context, type:typing.Literal['true','false']):
+        await interaction.followup.send(embed=embed,ephemeral=True)
+
+    @setup.command(name='meme_listener',description='enable or disable meme listener')
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    async def disable_meme(self, interaction: discord.Interaction, type: typing.Literal['true', 'false']):
+        await interaction.response.defer(ephemeral=True)
         if type == 'true':
             await self.bot.db.execute(
-            """ 
+                """ 
                 INSERT INTO test.setup(guild_id1,listener)
                 VALUES($1,$2)
                 ON CONFLICT (guild_id1) DO
                 UPDATE SET listener = $2
-            """,ctx.guild.id,True
+            """, interaction.guild.id, True
             )
         elif type == 'false':
             await self.bot.db.execute(
@@ -114,7 +132,7 @@ class setup_memme(commands.Cog):
                     VALUES($1,$2)
                     ON CONFLICT (guild_id1) DO
                     UPDATE SET listener = $2
-                """, ctx.guild.id, False
+                """, interaction.guild.id, False
             )
         embed = discord.Embed(
             title='``meme listener``',
@@ -122,83 +140,58 @@ class setup_memme(commands.Cog):
                         f"to setup channel do ``$setup meme <channel>``"
         )
 
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
-
-
-
-    @setup_command.command(name='vote')
-    @commands.has_permissions(manage_guild=True)
-    async def setup_vote(self, ctx: Context, channel: discord.TextChannel):
-
-        send_message = channel.permissions_for(ctx.guild.me).send_messages
-        read_messages = channel.permissions_for(ctx.guild.me).read_messages
-        read_message_history = channel.permissions_for(ctx.guild.me).read_message_history
-        if not send_message and not read_messages and not read_message_history:
-            if (ctx.channel.type == discord.ChannelType.public_thread) or (
-                    ctx.channel.type == discord.ChannelType.private_thread):
-                await ctx.error_embed(
-                    error_name='setup command error',
-                    error_dis=f'{self.bot.right}i dont have permission to send messages in {channel.mention} \n'
-                              f'make sure i have following permissions in that channel ``'
-                              f'send messages`` ``read messages``'
-                )
-                return
-
+    @setup.command(name='vote',description='setup vote channel')
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    async def setup_vote(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        await interaction.response.defer(ephemeral=True)
         await self.bot.db.execute(
             """
             INSERT INTO test.setup(guild_id1,vote)
             VALUES($1,$2) 
             ON CONFLICT (guild_id1) DO
             UPDATE SET vote = $2 ;
-            """, ctx.guild.id, channel.id
+            """, interaction.guild.id, channel.id
         )
         embed = discord.Embed(
             title='``vote channel``',
             description=f"{self.bot.right} vote channel has been successfully updated to {channel.mention}"
         )
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
-    @setup_command.command(name='announcement')
-    @commands.has_permissions(manage_guild=True)
-    async def announcement(self, ctx: Context, channel: discord.TextChannel):
-        send_message = channel.permissions_for(ctx.guild.me).send_messages
-        read_messages = channel.permissions_for(ctx.guild.me).read_messages
-        read_message_history = channel.permissions_for(ctx.guild.me).read_message_history
-        if not send_message and not read_messages and not read_message_history:
-            if (ctx.channel.type == discord.ChannelType.public_thread) or (
-                    ctx.channel.type == discord.ChannelType.private_thread):
-                await ctx.error_embed(
-                    error_name='setup command error',
-                    error_dis=f'{self.bot.right}i dont have permission to send messages in {channel.mention} \n'
-                              f'make sure i have following permissions in that channel ``'
-                              f'send messages`` ``read messages``'
-                )
-                return
-
+    @setup.command(name='announcement', description='setup announcement channel')
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    async def announcement(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        await interaction.response.defer(ephemeral=True)
         await self.bot.db.execute(
             """
             INSERT INTO test.setup(guild_id1,announcement)
             VALUES($1,$2) 
             ON CONFLICT (guild_id1) DO
             UPDATE SET announcement = $2 ;
-            """, ctx.guild.id, channel.id
+            """, interaction.guild.id, channel.id
         )
         embed = discord.Embed(
             title='``vote channel``',
             description=f"{self.bot.right} announcement channel has been successfully updated to {channel.mention}"
         )
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
-    @setup_command.command(name='vote_time')
-    @commands.has_permissions(manage_guild=True)
-    async def vote_time(self, ctx: Context, voting_time: int):
+    @setup.command(name='vote_time', description='setup voting time')
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    async def vote_time(self, interaction: discord.Interaction, voting_time: int):
         if voting_time > 60:
-            await ctx.error_embed(
-                description='the time must be under 1 hours'
-            )
+            embed = discord.Embed(description=f'{self.bot.right} the time must be under 1 hours')
+            await interaction.response.send_message(embed=embed,epehemeral=True)
             return
-
+        await interaction.response.defer(ephemeral=True)
 
         await self.bot.db.execute(
             """
@@ -206,7 +199,7 @@ class setup_memme(commands.Cog):
             VALUES($1,$2)
             ON CONFLICT (guild_id1) DO
             UPDATE SET vote_time = $2 ;
-            """, ctx.guild.id, voting_time
+            """, interaction.guild.id, voting_time
         )
 
         embed = discord.Embed(
@@ -214,63 +207,205 @@ class setup_memme(commands.Cog):
             description=f'>>> {self.bot.right} **voting time has been updated to ``{voting_time}`` min**'
         )
 
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
-    @setup_command.command(name='customization_time')
-    @commands.has_permissions(manage_guild=True)
-    async def customisation_time(self, ctx: Context, customisation_time: int):
-        if customisation_time > 15:
-            await ctx.error_embed(
-                description='the time must be under 15 min'
-            )
+    @setup.command(name='customisation_time', description='setup customisation time')
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    async def customisation_time(self, interaction: discord.Interaction, customisation_time: int):
+
+        if customisation_time > 60:
+            embed = discord.Embed(description=f'{self.bot.right} the time must be under 15 min')
+            await interaction.response.send_message(embed=embed, epehemeral=True)
             return
-
+        await interaction.response.defer(ephemeral=True)
         await self.bot.db.execute(
             """
             INSERT INTO test.setup(guild_id1,customization_time)
             VALUES($1,$2)
             ON CONFLICT (guild_id1) DO
             UPDATE SET customization_time = $2 ;
-            """, ctx.guild.id, customisation_time
+            """, interaction.guild.id, customisation_time
         )
 
         embed = discord.Embed(
             title='``setup``',
             description=f'>>> {self.bot.right}**customisation time has been updated to ``{customisation_time}`` min**'
         )
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
-    @setup_command.command(name='meme')
-    @commands.has_permissions(manage_guild=True)
-    async def meme(self, ctx: Context, channel: discord.TextChannel):
-        send_message = channel.permissions_for(ctx.guild.me).send_messages
-        read_messages = channel.permissions_for(ctx.guild.me).read_messages
-        manage_messages = channel.permissions_for(ctx.guild.me).manage_messages
-        read_message_history = channel.permissions_for(ctx.guild.me).read_message_history
-        if not send_message or not read_messages or not read_message_history or not manage_messages:
-            if (ctx.channel.type == discord.ChannelType.public_thread) or (
-                    ctx.channel.type == discord.ChannelType.private_thread):
-                await ctx.error_embed(
-                    error_name='setup command error',
-                    error_dis=f'{self.bot.right}i dont have permission in {channel.mention} channel\n'
-                              f'make sure i have following permissions in that channel ``'
-                              f'send messages`` ``read messages``,``manage message``'
-                )
-                return
-
+    @setup.command(name='meme', description='setup meme channel for oc listener')
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    async def meme(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        await interaction.response.defer(ephemeral=True)
         await self.bot.db.execute(
             """
             INSERT INTO test.setup(guild_id1,memechannel)
             VALUES($1,$2) 
             ON CONFLICT (guild_id1) DO
             UPDATE SET memechannel = $2 ;
-            """, ctx.guild.id, channel.id
+            """, interaction.guild.id, channel.id
         )
         embed = discord.Embed(
             title='``meme channel``',
             description=f"{self.bot.right} meme channel has been successfully updated to {channel.mention}"
         )
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
+
+    @setup.command(name='thread-listener', description='enable or disable thread-listener')
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    async def disable_thread(self, interaction: discord.Interaction, type: typing.Literal['true', 'false']):
+        await interaction.response.defer(ephemeral=True)
+        if type == 'true':
+            await self.bot.db.execute(
+                """ 
+                INSERT INTO test.setup(guild_id1,thread_ls)
+                VALUES($1,$2)
+                ON CONFLICT (guild_id1) DO
+                UPDATE SET thread_ls = $2
+            """, interaction.guild.id, True
+            )
+        elif type == 'false':
+            await self.bot.db.execute(
+                """ 
+                    INSERT INTO test.setup(guild_id1,thread_ls)
+                    VALUES($1,$2)
+                    ON CONFLICT (guild_id1) DO
+                    UPDATE SET thread_ls = $2
+                """, interaction.guild.id, False
+            )
+        embed = discord.Embed(
+            title='``meme listener``',
+            description=f"{self.bot.right} thread listener has been updated to ``{type}`` \n"
+                        f"to setup channel do ``/setup thread-channel <channel>``"
+        )
+
+        await interaction.followup.send(embed=embed)
+
+    @setup.command(name='thread-channel', description='setup thread channel for oc listener')
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    async def thread_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        await interaction.response.defer(ephemeral=True)
+        await self.bot.db.execute(
+            """
+            INSERT INTO test.setup(guild_id1,thread_channel)
+            VALUES($1,$2) 
+            ON CONFLICT (guild_id1) DO
+            UPDATE SET thread_channel = $2 ;
+            """, interaction.guild.id, channel.id
+        )
+        embed = discord.Embed(
+            title='``thread channel``',
+            description=f"{self.bot.right} thread channel has been successfully updated to {channel.mention}"
+        )
+        await interaction.followup.send(embed=embed)
+
+    @setup.command(name='shop-log', description='setup shop log channel')
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    async def shop_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        await interaction.response.defer(ephemeral=True)
+        await self.bot.db.execute(
+            """
+            INSERT INTO test.setup(guild_id1,shop_log)
+            VALUES($1,$2) 
+            ON CONFLICT (guild_id1) DO
+            UPDATE SET shop_log = $2 ;
+            """, interaction.guild.id, channel.id
+        )
+        embed = discord.Embed(
+            title='``shop_log channel``',
+            description=f"{self.bot.right} shop_log channel has been successfully updated to {channel.mention}"
+        )
+        await interaction.followup.send(embed=embed)
+
+    @setup.command(name='reaction-channel', description='add a reaction channel where bot will automatically react to memes')
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    async def reaction_channel(self, interaction: discord.Interaction, mode:typing.Literal['remove','add'],
+                               channel: discord.TextChannel,
+                              ):
+        await interaction.response.defer(ephemeral=True)
+        channels =  await self.bot.db.fetchval(
+            """ SELECT reaction_channel FROM test.setup WHERE guild_id1=$1""",
+            interaction.guild.id
+        )
+        if mode=='add':
+            if channel.id in channels:
+                embed =discord.Embed(description=f'{self.bot.right} the channel is already in the list')
+                await interaction.followup.send(embed=embed)
+                return
+
+        if channels is None or not channel.id in channels :
+            if mode=='remove':
+                embed = discord.Embed(description=f'{self.bot.right} there is no channel called {channel.mention} in the list')
+                await interaction.followup.send(embed=embed)
+                return
+        if channels is None:
+            channels = []
+            channels.append(channel.id)
+        else:
+            if mode == 'add':
+                channels.append(channel.id)
+            else:
+                channels.remove(channel.id)
+
+        await self.bot.db.execute(
+            """
+            INSERT INTO test.setup(guild_id1,reaction_channel)
+            VALUES($1,$2) 
+            ON CONFLICT (guild_id1) DO
+            UPDATE SET reaction_channel = $2 ;
+            """, interaction.guild.id, channels
+        )
+        embed = discord.Embed(
+            title='``reaction channel``',
+            description=f"{self.bot.right} {channel.mention} {'added' if mode == 'add' else 'removed'} to the list"
+        )
+        await interaction.followup.send(embed=embed)
+
+    @setup.command(name='reactions', description='enable or disable thread-listener')
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    async def desable_reaction(self, interaction: discord.Interaction, type: typing.Literal['true', 'false']):
+        await interaction.response.defer(ephemeral=True)
+        if type == 'true':
+            await self.bot.db.execute(
+                """ 
+                INSERT INTO test.setup(guild_id1,reaction_ls)
+                VALUES($1,$2)
+                ON CONFLICT (guild_id1) DO
+                UPDATE SET reaction_ls = $2
+            """, interaction.guild.id, True
+            )
+        elif type == 'false':
+            await self.bot.db.execute(
+                """ 
+                    INSERT INTO test.setup(guild_id1,reaction_ls)
+                    VALUES($1,$2)
+                    ON CONFLICT (guild_id1) DO
+                    UPDATE SET reaction_ls = $2
+                """, interaction.guild.id, False
+            )
+        embed = discord.Embed(
+            title='``meme listener``',
+            description=f"{self.bot.right} reaction listener has been updated to ``{type}`` \n"
+                        f"to setup channel do"
+        )
+
+        await interaction.followup.send(embed=embed)
+
+
 
 
 async def setup(bot: pepebot) -> None:

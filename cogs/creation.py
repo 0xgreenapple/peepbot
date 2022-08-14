@@ -225,7 +225,6 @@ class creation(commands.Cog):
         return a
 
 
-
     @commands.command(name='meme')
     @commands.cooldown(1, 3, BucketType.user)
     async def meme(self, ctx: Context, file: typing.Optional[discord.Attachment], *, caption: str):

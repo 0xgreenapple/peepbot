@@ -215,7 +215,7 @@ class balleaderboard(menus.ListPageSource):
     async def format_page(self, menu, entries):
         pages = []
         for index, entry in enumerate(entries, start=menu.current_page * self.per_page):
-            pages.append(f'{index + 1}. {entry[0]} <a:aSDVstardrop:1007680622292123781> **points**: ``{entry[1]}``')
+            pages.append(f'{index + 1}. {entry[0]} <a:coin1:1008074318082752583> **points**: ``{entry[1]}``')
 
         maximum = self.get_max_pages()
         if maximum > 1:
