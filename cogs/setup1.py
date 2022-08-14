@@ -354,12 +354,6 @@ class setup_memme(commands.Cog):
                         description=f'{self.bot.right} there is no channel called {channel.mention} in the list')
                     await interaction.followup.send(embed=embed)
                     return
-        else:
-            if channels is None:
-                embed = discord.Embed(
-                    description=f'{self.bot.right} there is no channel called {channel.mention} in the list')
-                await interaction.followup.send(embed=embed)
-                return
 
         if channels is None:
             channels = []
