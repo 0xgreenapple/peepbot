@@ -78,7 +78,7 @@ class setup_memme(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
-    @setup.command(name='deadchat',description='enable or disable dead chat command')
+    @setup.command(name='deadchat', description='enable or disable dead chat command')
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -108,9 +108,9 @@ class setup_memme(commands.Cog):
                         f"to setup role do ``$setup deadchat_role <role>``"
         )
 
-        await interaction.followup.send(embed=embed,ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @setup.command(name='meme_listener',description='enable or disable meme listener')
+    @setup.command(name='meme_listener', description='enable or disable meme listener')
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.guild_only()
@@ -142,7 +142,7 @@ class setup_memme(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
-    @setup.command(name='vote',description='setup vote channel')
+    @setup.command(name='vote', description='setup vote channel')
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.guild_only()
@@ -189,7 +189,7 @@ class setup_memme(commands.Cog):
     async def vote_time(self, interaction: discord.Interaction, voting_time: int):
         if voting_time > 60:
             embed = discord.Embed(description=f'{self.bot.right} the time must be under 1 hours')
-            await interaction.response.send_message(embed=embed,epehemeral=True)
+            await interaction.response.send_message(embed=embed, epehemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
 
@@ -327,29 +327,40 @@ class setup_memme(commands.Cog):
         )
         await interaction.followup.send(embed=embed)
 
-    @setup.command(name='reaction-channel', description='add a reaction channel where bot will automatically react to memes')
+    @setup.command(name='reaction-channel',
+                   description='add a reaction channel where bot will automatically react to memes')
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.guild_only()
-    async def reaction_channel(self, interaction: discord.Interaction, mode:typing.Literal['remove','add'],
+    async def reaction_channel(self, interaction: discord.Interaction, mode: typing.Literal['remove', 'add'],
                                channel: discord.TextChannel,
-                              ):
+                               ):
         await interaction.response.defer(ephemeral=True)
-        channels =  await self.bot.db.fetchval(
+        channels = await self.bot.db.fetchval(
             """ SELECT reaction_channel FROM test.setup WHERE guild_id1=$1""",
             interaction.guild.id
         )
-        if mode=='add':
-            if channel.id in channels:
-                embed =discord.Embed(description=f'{self.bot.right} the channel is already in the list')
+        if mode == 'add':
+            if channels is not None:
+                if channel.id in channels:
+                    embed = discord.Embed(description=f'{self.bot.right} the channel is already in the list')
+                    await interaction.followup.send(embed=embed)
+                    return
+
+        if channels is not None:
+            if mode == 'remove':
+                if not channel.id in channels:
+                    embed = discord.Embed(
+                        description=f'{self.bot.right} there is no channel called {channel.mention} in the list')
+                    await interaction.followup.send(embed=embed)
+                    return
+        else:
+            if channels is None:
+                embed = discord.Embed(
+                    description=f'{self.bot.right} there is no channel called {channel.mention} in the list')
                 await interaction.followup.send(embed=embed)
                 return
 
-        if channels is None or not channel.id in channels :
-            if mode=='remove':
-                embed = discord.Embed(description=f'{self.bot.right} there is no channel called {channel.mention} in the list')
-                await interaction.followup.send(embed=embed)
-                return
         if channels is None:
             channels = []
             channels.append(channel.id)
@@ -404,8 +415,6 @@ class setup_memme(commands.Cog):
         )
 
         await interaction.followup.send(embed=embed)
-
-
 
 
 async def setup(bot: pepebot) -> None:
