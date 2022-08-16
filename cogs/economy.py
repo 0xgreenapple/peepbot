@@ -27,9 +27,11 @@ class pointsleaderboard(bal_leaderboard):
 
 def mycheck():  # Creating the check
     async def startCheck(ctx: Context):  # This could be a async/sync.
-        # Do whatever here. Note that this must return a bool (True/False). An example to check if the author is not the bot owner and if the member is in a guild.
-        # If the check returns False (In this case, the author is the owner and/or the author is not in the guild), it would raise discord.ext.commands.CheckFailure. You can handle this in a on_command_error event.
-        return ctx.author.id == 792917906165727264 or ctx.author.id == 888058231094665266
+        # Do whatever here. Note that this must return a bool (True/False). An example to check if the author is not
+        # the bot owner and if the member is in a guild. If the check returns False (In this case, the author is the
+        # owner and/or the author is not in the guild), it would raise discord.ext.commands.CheckFailure. You can
+        # handle this in a on_command_error event.
+        return ctx.author.id == ctx.guild.owner.id or ctx.author.id == 888058231094665266
 
     return commands.check(startCheck)
 
@@ -40,7 +42,7 @@ class economy(commands.Cog):
 
     @commands.command(name='add', aliases=['add_points'])
     @mycheck()
-    async def add_points(self, ctx: Context, memeber: discord.Member, points: int = 1):
+    async def add_points(self, ctx: Context, memeber: discord.Member, points: float = 1):
         await self.bot.db.execute("""
         INSERT INTO test.economy(guild_id,user_id,points)
         VALUES($1,$2,$3)
@@ -62,7 +64,7 @@ class economy(commands.Cog):
 
     @commands.command(name='remove')
     @mycheck()
-    async def remove_points(self, ctx: Context, memeber: discord.Member, points: int = 1):
+    async def remove_points(self, ctx: Context, memeber: discord.Member, points: float = 1):
         total = await self.bot.db.fetchval(
             """SELECT points FROM test.economy WHERE guild_id = $1
             AND user_id = $2""", ctx.guild.id, memeber.id
@@ -122,7 +124,7 @@ class economy(commands.Cog):
 
     @commands.command(name='give', aliases=['transfer'])
     @commands.cooldown(1, 5, BucketType.user)
-    async def give_points(self, ctx: Context, memeber: discord.Member, points: int):
+    async def give_points(self, ctx: Context, memeber: discord.Member, points: float):
         total_author = await self.bot.db.fetchval(
             """SELECT points FROM test.economy WHERE guild_id = $1
             AND user_id = $2""", ctx.guild.id, ctx.author.id
@@ -131,21 +133,29 @@ class economy(commands.Cog):
             """SELECT points FROM test.economy WHERE guild_id = $1
             AND user_id = $2""", ctx.guild.id, memeber.id
         )
-        if total_author == 0:
+
+
+        if total_author == 0 or total_author is None:
             embed = discord.Embed(description=f'{self.bot.right} you have 0 coins to give')
             await ctx.send(embed=embed)
             return
-        if points>total_member:
-            embed = discord.Embed(description=f'{self.bot.right} you have not enough coins to give')
-            await ctx.send(embed=embed)
-            return
+        if total_member:
+            if points > total_author:
+                embed = discord.Embed(description=f'{self.bot.right} you have not enough coins to give')
+                await ctx.send(embed=embed)
+                return
 
-        poinsts_to_give = total_member + points
+        poinsts_to_give = total_member + points if total_member else points
         poits_take = total_author - points
 
         await self.bot.db.execute("""
-                    UPDATE test.economy SET points = $3 WHERE user_id = $1 AND guild_id = $2;
-                    """, memeber.id, ctx.guild.id, poinsts_to_give)
+                    INSERT INTO test.economy (user_id,guild_id,points)
+                    VALUES($1,$2,$3)
+                    ON CONFLICT (user_id,guild_id) DO
+                    UPDATE SET points = $3;
+                    """, memeber.id, ctx.guild.id, poinsts_to_give
+        )
+
         await self.bot.db.execute("""
                             UPDATE test.economy SET points = $3 WHERE user_id = $1 AND guild_id = $2;
                             """, ctx.author.id, ctx.guild.id, poits_take)

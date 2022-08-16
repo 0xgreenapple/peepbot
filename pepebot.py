@@ -60,7 +60,7 @@ class pepebot(commands.Bot):
                 emojis=True,
                 guilds=True,
                 message_content=True,
-
+                reactions=True
             ),
 
             application_id=958334261541343262,
@@ -157,7 +157,7 @@ class pepebot(commands.Bot):
         await self.db.execute("CREATE SCHEMA IF NOT EXISTS test")
         await self.db.execute(
             """
-
+            
             CREATE TABLE IF NOT EXISTS test.duel(
                 user_id1      BIGINT NOT NULL,
                 user_id2      BIGINT NOT NULL,
@@ -193,7 +193,6 @@ class pepebot(commands.Bot):
 
         await self.db.execute(
             """
-            
             CREATE TABLE IF NOT EXISTS test.setup(
                 guild_id1     BIGINT NOT NULL,
                 announcement      BIGINT,
@@ -213,10 +212,11 @@ class pepebot(commands.Bot):
 
         await self.db.execute(
             """
+            ALTER TABLE test.economy ALTER COLUMN points type FLOAT;
             CREATE TABLE IF NOT EXISTS test.economy(
                 guild_id          BIGINT NOT NULL,
                 user_id           BIGINT NOT NULL,
-                points            BIGINT DEFAULT 0,
+                points            FLOAT DEFAULT 0,
                 PRIMARY KEY (guild_id,user_id)
             )
         """)

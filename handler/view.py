@@ -26,7 +26,7 @@ class duel_button(discord.ui.View):
                  user: discord.Member,
                  bot: pepebot.pepebot
                  ):
-        super().__init__(timeout=10*60)
+        super().__init__(timeout=10 * 60)
 
         self.message: discord.Message = message
         self.interaction_message = None
@@ -142,7 +142,7 @@ class ready_button(discord.ui.View):
                  memes: list
 
                  ):
-        super().__init__(timeout=60*15)
+        super().__init__(timeout=60 * 15)
         self.message: discord.Message = message
         self.member: discord.Member = member
         self.user: discord.Member = user
@@ -163,7 +163,7 @@ class ready_button(discord.ui.View):
             first_caption = ''.join(message2[0])
             secondcaption = ''.join(message2[1])
 
-        elif len(message2) ==1:
+        elif len(message2) == 1:
             first_caption = ''.join(message2[0])
 
         password = os.environ.get('IMAGEPASS')
@@ -332,7 +332,7 @@ class ready_button(discord.ui.View):
             return len(checks) == 2
 
         try:
-            await self.bot.wait_for(f'message', timeout= customization_time*60, check=check)
+            await self.bot.wait_for(f'message', timeout=customization_time * 60, check=check)
         except asyncio.TimeoutError:
             if len(users) != 0:
                 user_id = users[0]['id']
@@ -446,7 +446,7 @@ class ready_button(discord.ui.View):
         except:
             pass
 
-        sleep_until = datetime.now() + timedelta(seconds=voting_time*60)
+        sleep_until = datetime.now() + timedelta(seconds=voting_time * 60)
         await discord.utils.sleep_until(sleep_until)
 
         x_msg = await vote.fetch_message(first_submission.id)
@@ -731,7 +731,6 @@ class ready_button(discord.ui.View):
             await interaction.followup.send('something went wrong', ephemeral=True)
 
 
-
 class interaction_delete_view(discord.ui.View):
     def __init__(
             self,
@@ -790,42 +789,68 @@ class interaction_error_button(discord.ui.View):
                 pass
 
 
-
 class accept_bought(discord.ui.View):
     def __init__(
             self,
             bot: pepebot.pepebot,
-            item:str,
-            user:discord.Member
+            item: str,
+            user: discord.Member
 
     ):
         super().__init__(timeout=None)
         self.bot = bot
-        self.item_name =item
+        self.item_name = item
         self.user_id = user
 
     @discord.ui.button(label='accept', style=discord.ButtonStyle.green)
     async def accept(self, interaction: discord.Interaction, button):
-        if interaction.user.id == 792917906165727264 or interaction.user.id == 888058231094665266:
+        if interaction.user.id == interaction.guild.owner.id or interaction.user.id == 888058231094665266:
             await interaction.response.defer(ephemeral=True)
             await self.bot.db.execute('DELETE FROM test.inv WHERE user_id = $1 AND guild_id=$2 AND items = $3 ',
-                                      self.user_id.id,self.user_id.guild.id,self.item_name)
+                                      self.user_id.id, self.user_id.guild.id, self.item_name)
 
             await interaction.delete_original_message()
             await interaction.followup.send('done')
 
             return
         else:
-            await interaction.response.send_message('this is not for you lol', ephemeral=True)
+            await interaction.response.send_message('only owner can do it', ephemeral=True)
 
     @discord.ui.button(label='cancel', style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button):
-        if interaction.user.id == 792917906165727264 or interaction.user.id == 888058231094665266:
+        if interaction.user.id == interaction.guild.owner.id or interaction.user.id == 888058231094665266:
             await interaction.delete_original_message()
-            await interaction.response.send_message('done',ephemeral=True)
+            await interaction.response.send_message('done', ephemeral=True)
             return
         else:
-            await interaction.followup.send_message('this is not for you lol', ephemeral=True)
+            await interaction.followup.send_message('only owner can do it', ephemeral=True)
 
 
+class thread_channel(discord.ui.View):
+    def __init__(
+            self,
+            user:discord.Member
 
+    ):
+        super().__init__(timeout=1440 * 60)
+        self.user = user
+
+    @discord.ui.button(label='archive thread', style=discord.ButtonStyle.green)
+    async def archive(self, interaction: discord.Interaction, button):
+        if interaction.user.id == self.user.id or interaction.user.guild_permissions.manage_threads:
+            await interaction.response.defer(ephemeral=True)
+            channel = interaction.channel
+            if channel.type == discord.ChannelType.public_thread:
+                await channel.edit(archived=True)
+            await interaction.delete_original_message()
+            return
+        else:
+            await interaction.response.send_message('this is not for you lol', ephemeral=True)
+
+    async def on_timeout(self) -> None:
+        for item in self.children:
+            item.disabled = True
+            try:
+                await self.message.edit(view=self)
+            except discord.NotFound:
+                pass

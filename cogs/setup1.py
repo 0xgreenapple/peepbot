@@ -177,7 +177,7 @@ class setup_memme(commands.Cog):
             """, interaction.guild.id, channel.id
         )
         embed = discord.Embed(
-            title='``vote channel``',
+            title='``announcement channel``',
             description=f"{self.bot.right} announcement channel has been successfully updated to {channel.mention}"
         )
         await interaction.followup.send(embed=embed)
@@ -336,6 +336,7 @@ class setup_memme(commands.Cog):
                                channel: discord.TextChannel,
                                ):
         await interaction.response.defer(ephemeral=True)
+
         channels = await self.bot.db.fetchval(
             """ SELECT reaction_channel FROM test.setup WHERE guild_id1=$1""",
             interaction.guild.id
@@ -349,7 +350,7 @@ class setup_memme(commands.Cog):
 
         if channels is not None:
             if mode == 'remove':
-                if not channel.id in channels:
+                if channel.id not in channels:
                     embed = discord.Embed(
                         description=f'{self.bot.right} there is no channel called {channel.mention} in the list')
                     await interaction.followup.send(embed=embed)
@@ -410,6 +411,25 @@ class setup_memme(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
+    @setup.command(name='likes', description='how many likes need to get to the announcement channel')
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    async def likes(self, interaction: discord.Interaction, likes:int):
+        await interaction.response.defer(ephemeral=True)
+        await self.bot.db.execute(
+            """
+            INSERT INTO test.setup(guild_id1,reaction_count)
+            VALUES($1,$2) 
+            ON CONFLICT (guild_id1) DO
+            UPDATE SET reaction_count = $2 ;
+            """, interaction.guild.id, likes
+        )
+        embed = discord.Embed(
+            title='``likes ``',
+            description=f"{self.bot.right} reaction counts has been updated to {likes}"
+        )
+        await interaction.followup.send(embed=embed)
 
 async def setup(bot: pepebot) -> None:
     await bot.add_cog(
