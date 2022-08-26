@@ -131,7 +131,7 @@ class pepebot(commands.Bot):
         self.loop.create_task(
             self.startup_tasks(), name="Bot startup tasks"
         )
-        COGS = ['duel', 'setup1', 'help', 'creation', 'listeners', 'economy', 'server', 'error handler']
+        COGS = ['duel', 'setup1', 'help', 'creation', 'economy', 'server', 'error handler','listeners']
         self.console_log("loading cogs..")
         for cog in COGS:
             await self.load_extension(f"cogs.{cog}")
@@ -155,6 +155,8 @@ class pepebot(commands.Bot):
         await self.connect_to_database()
 
         await self.db.execute("CREATE SCHEMA IF NOT EXISTS test")
+
+        # setup duel commands
         await self.db.execute(
             """
             
@@ -172,6 +174,7 @@ class pepebot(commands.Bot):
             )
         """)
 
+        # leaderboard
         await self.db.execute(
             """
             CREATE TABLE IF NOT EXISTS test.leaderboard(
@@ -181,6 +184,19 @@ class pepebot(commands.Bot):
                 PRIMARY KEY (guild_id1,user_id1)
             )
         """)
+
+        # setup likes for each channel
+        await self.db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test.likes(
+                guild_id1         BIGINT NOT NULL,
+                channel        BIGINT,
+                likes        BIGINT DEFAULT 5,
+                PRIMARY KEY (guild_id1,channel)
+            )
+        """)
+
+        # i don't know what it does
         await self.db.execute(
             """
             CREATE TABLE IF NOT EXISTS test.utils(
@@ -191,25 +207,97 @@ class pepebot(commands.Bot):
             )
         """)
 
+        # setup rewards that will member get after reaching certain memes in channel
         await self.db.execute(
             """
+            
+            CREATE TABLE IF NOT EXISTS test.rewards(
+                guild_id1     BIGINT NOT NULL,
+                channel_id1      BIGINT NOT NULL,
+                limit_1      BIGINT,
+                limit_2      BIGINT,
+                limit_3      BIGINT,
+                role_1       BIGINT,
+                role_2       BIGINT,
+                role_3       BIGINT,
+                PRIMARY KEY (guild_id1,channel_id1)
+            )
+        """)
+
+        # setup how many memes will need to get specific reward
+
+
+        """
+         ALTER TABLE test.setup DROP COLUMN announcement;
+         ALTER TABLE test.setup DROP COLUMN memechannel;
+         ALTER TABLE test.setup DROP COLUMN thread_channel;
+         ALTER TABLE test.setup DROP COLUMN reaction_channel;
+         ALTER TABLE test.setup DROP COLUMN shop_log;
+         ALTER TABLE test.setup ADD COLUMN thread_message TEXT;
+         ALTER TABLE test.setup ADD COLUMN rewards;
+         ALTER TABLE test.setup ALTER COLUMN vote_time type BIGINT DEFAULT 60;
+        
+        """
+
+        # turn on or off the whole system in commands
+        await self.db.execute(
+            """
+           
             CREATE TABLE IF NOT EXISTS test.setup(
                 guild_id1     BIGINT NOT NULL,
-                announcement      BIGINT,
-                vote              BIGINT,
-                memechannel       BIGINT,
-                thread_channel    BIGINT,
-                reaction_ls       BOOLEAN DEFAULT FALSE,
-                reaction_channel  BIGINT[],
-                shop_log          BIGINT,
-                thread_ls         BOOLEAN DEFAULT FALSE,
-                listener          BOOLEAN DEFAULT FALSE,
-                vote_time         BIGINT DEFAULT 10,
+                vote               BIGINT,
+                reaction_ls        BOOLEAN DEFAULT FALSE,
+                thread_ls          BOOLEAN DEFAULT FALSE,
+                listener           BOOLEAN DEFAULT FALSE,
+                thread_message     TEXT,
+                rewards            BOOLEAN DEFAULT FALSE,      
+                vote_time          BIGINT DEFAULT 60,
                 customization_time BIGINT DEFAULT 5,
                 PRIMARY KEY (guild_id1)
             )
         """)
 
+        # setup channels in the guild
+        await self.db.execute(
+            """
+            
+            CREATE TABLE IF NOT EXISTS test.channels(
+                guild_id1         BIGINT NOT NULL,
+                gallery_l1        BIGINT,
+                gallery_l2        BIGINT,
+                gallery_l3        BIGINT,
+                gallery_l4        BIGINT,
+                gallery_l5        BIGINT,
+                gallery_l6        BIGINT,
+                vote              BIGINT,
+                meme_channel      BIGINT[],
+                thread_channel    BIGINT[],
+                reaction_channel  BIGINT[],
+                shop_log          BIGINT,
+                PRIMARY KEY (guild_id1)
+            )
+        """)
+        await self.db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test.msg(
+                guild_id1         BIGINT NOT NULL,
+                channel_id        BIGINT NOT NULL,
+                user_id           BIGINT NOT NULL,
+                limit1             BIGINT DEFAULT 0,
+                PRIMARY KEY (guild_id1,channel_id,user_id)
+            )
+        """)
+        await self.db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test.thread_channel(
+                guild_id          BIGINT NOT NULL,
+                channel_id        BIGINT NOT NULL,
+                msg               TEXT,
+                PRIMARY KEY (guild_id,channel_id)
+            )
+        """)
+
+        # economy table
         await self.db.execute(
             """
             ALTER TABLE test.economy ALTER COLUMN points type FLOAT;
@@ -220,6 +308,8 @@ class pepebot(commands.Bot):
                 PRIMARY KEY (guild_id,user_id)
             )
         """)
+
+        # shop tables
         await self.db.execute(
             """
             CREATE TABLE IF NOT EXISTS test.shop(

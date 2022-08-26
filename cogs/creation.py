@@ -283,6 +283,52 @@ class creation(commands.Cog):
 
         await message.edit(content=f'something went wrong {self.bot.spongebob}')
 
+    @commands.command(name='caption')
+    @commands.cooldown(1, 3, BucketType.user)
+    async def _caption(self, ctx: Context, meme_id:int, *, caption1: str):
+
+        session :aiohttp.ClientSession = self.bot.aiohttp_session
+        URL = "https://api.imgflip.com/caption_image"
+        first_caption = ' '
+        second_caption = ' '
+        password = os.environ.get('IMAGEPASS')
+        username = os.environ.get('IMAGEUSER')
+        spilt = caption1.split(',')
+
+        if len(spilt) == 2:
+            first_caption = spilt[0]
+            second_caption = spilt[1]
+        else:
+            first_caption = spilt[0]
+
+        print(first_caption)
+        print(second_caption)
+
+
+        params = {
+            'username': f'{username}',
+            'password': f'{password}',
+            'template_id': f'{meme_id}',
+            'text0': f'{first_caption.lower()}',
+            'text1': f'{second_caption.lower()}',
+        }
+
+        response = await session.request('POST', URL, params=params)
+
+        print(response)
+        if response.status == 200:
+            json = await response.json()
+            url = json['data']['url']
+            image = await session.get(url=url)
+            _bytes = await image.read()
+            file = discord.File(fp=io.BytesIO(_bytes), filename='meme.png')
+            await ctx.send(file=file)
+        elif response.status == 404:
+            await ctx.error_embed(description='this is now a vaild id pls use the id from $template command')
+        else:
+            await ctx.send(f'{self.bot.spongebob} something went wrong')
+
+
     @commands.command(name='ripple')
     @commands.cooldown(1, 3, BucketType.user)
     async def ripple(self, ctx: Context, file: typing.Optional[discord.Attachment]):
