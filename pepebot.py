@@ -63,7 +63,7 @@ class pepebot(commands.Bot):
                 reactions=True
             ),
 
-            application_id=958334261541343262,
+            application_id=appid,
             help_command=None,
 
         )
@@ -430,3 +430,5 @@ class pepebot(commands.Bot):
 
 
 token = os.environ.get('BETATOKEN')
+appid = os.environ.get('APPLICATION_ID')
+

@@ -186,7 +186,6 @@ class economy(commands.Cog):
             """ SELECT user_id,  points 
             from test.economy WHERE guild_id = $1
             order by points desc
-            fetch first 10 rows only
             """, ctx.guild.id
         )
         total = await self.bot.db.fetchrow(
