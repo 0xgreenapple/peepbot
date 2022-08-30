@@ -60,8 +60,7 @@ class pepebot(commands.Bot):
                 emojis=True,
                 guilds=True,
                 message_content=True,
-                reactions=True
-            ),
+                reactions=True       ),
 
             application_id=appid,
             help_command=None,
