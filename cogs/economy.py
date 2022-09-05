@@ -41,8 +41,19 @@ class economy(commands.Cog):
         self.bot = bot
 
     @commands.command(name='add', aliases=['add_points'])
-    @mycheck()
+    @commands.has_permissions(manage_guild=True)
     async def add_points(self, ctx: Context, memeber: discord.Member, points: float = 1):
+        role = await self.bot.db.fetchval(
+            """
+            SELECT mememanager_role FROM test.setup WHERE guild_id1 = $1
+            """, ctx.guild.id
+        )
+        if role:
+            role = ctx.guild.get_role(role)
+
+        if not ctx.author.id == ctx.guild.owner.id:
+            if role not in ctx.author.roles:
+                return
         await self.bot.db.execute("""
         INSERT INTO test.economy(guild_id,user_id,points)
         VALUES($1,$2,$3)
@@ -134,7 +145,6 @@ class economy(commands.Cog):
             AND user_id = $2""", ctx.guild.id, memeber.id
         )
 
-
         if total_author == 0 or total_author is None:
             embed = discord.Embed(description=f'{self.bot.right} you have 0 coins to give')
             await ctx.send(embed=embed)
@@ -154,7 +164,7 @@ class economy(commands.Cog):
                     ON CONFLICT (user_id,guild_id) DO
                     UPDATE SET points = $3;
                     """, memeber.id, ctx.guild.id, poinsts_to_give
-        )
+                                  )
 
         await self.bot.db.execute("""
                             UPDATE test.economy SET points = $3 WHERE user_id = $1 AND guild_id = $2;
@@ -286,9 +296,28 @@ class economy(commands.Cog):
             INSERT INTO test.shop(items,cost,emoji)
             VALUES($1,$2,$3)
             ON CONFLICT (items) DO
-            UPDATE SET cost = $2 ;
+            UPDATE SET cost = $2,emoji = $3 ;
             """, name, cost, emoji)
         await ctx.send('done')
+
+    @commands.command(name='remove_item')
+    @commands.is_owner()
+    async def shopremove(self, ctx: Context, *, name: str):
+
+        value = await self.bot.db.fetchval("""
+                        SELECT items FROM test.shop WHERE items = $1
+                        """, name)
+        if not value:
+            await ctx.send(
+                embed=discord.Embed(description="the item already not in list")
+            )
+            return
+
+        await self.bot.db.execute("""
+                DELETE FROM test.shop
+               WHERE items = $1
+                """, name)
+        await ctx.send('deleted')
 
     @commands.command(name='shop')
     @commands.cooldown(1, 5, BucketType.member)
@@ -368,6 +397,22 @@ class economy(commands.Cog):
             SELECT points FROM test.economy WHERE guild_id = $1 AND user_id= $2
             """, ctx.guild.id, ctx.author.id
         )
+        if item == 'point booster':
+            user_coin1 = user_coin * 1.5
+            await self.bot.db.execute(
+                """
+                UPDATE test.economy SET points = $1 WHERE user_id = $2 AND guild_id = $3
+                """, user_coin1, ctx.author.id, ctx.guild.id
+            )
+            user_coin3 = await self.bot.db.fetchval(
+                """
+                SELECT points FROM test.economy WHERE guild_id = $1 AND user_id= $2
+                """, ctx.guild.id, ctx.author.id
+            )
+            embed.description = f'{self.bot.right}  successfully perched point booster {emoji} **{itemname}** ' \
+                                f'now your coin is increased  {user_coin} coins to {user_coin3} {self.bot.coin} coins'
+            await ctx.send(embed=embed)
+            return
         await self.bot.db.execute(
             """INSERT INTO test.inv(user_id,guild_id,items)
                VALUES($1,$2,$3)

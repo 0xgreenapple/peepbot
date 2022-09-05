@@ -329,6 +329,8 @@ class setup_memme(commands.Cog):
                         await interaction.followup.send("channel already in list if you want to remove run "
                                                         "``thread-channel mode:remove``")
                     else:
+                        if msg.lower() == 'none':
+                            msg = None
                         await self.bot.db.execute(
                             """
                             INSERT INTO test.thread_channel(guild_id, channel_id,msg)
@@ -651,10 +653,8 @@ class setup_memme(commands.Cog):
             """, interaction.guild.id
         )
 
-
         print('channels two', channels)
         if channels:
-
 
             newchannels = [channels[0]['gallery_l1'], channels[0]['gallery_l2'], channels[0]['gallery_l3'],
                            channels[0]['gallery_l4'],
@@ -767,6 +767,20 @@ class setup_memme(commands.Cog):
                         f"{embed_msg}"
         )
         await interaction.followup.send(embed=embed)
+
+    @setup.command(name='meme-manager', description='setup meme manager role')
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.guild_only()
+    async def role_add_meme_manager(self, interaction: discord.Interaction, role: discord.Role):
+        await self.bot.db.execute(
+            """
+            INSERT INTO test.setup(guild_id1,mememanager_role)
+            VALUES ($1,$2)
+            ON CONFLICT(guild_id1) DO 
+            UPDATE SET mememanager_role = $2
+            """, interaction.guild.id, role.id
+        )
 
     @setup.command(name='rewards-system', description='turn on or turn off whole reward system')
     @app_commands.default_permissions(manage_guild=True)

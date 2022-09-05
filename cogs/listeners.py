@@ -250,7 +250,15 @@ class listeners(commands.Cog):
                 SELECT msg FROM test.thread_channel WHERE guild_id = $1 AND channel_id = $2
                 """, message.guild.id, message.channel.id
             )
-            msg = msg if msg else f" {message.author.mention} Make Sure the meme is **original**"
+            rolemention = await self.bot.db.fetchval(
+                """
+                SELECT mememanager_role FROM test.setup WHERE guild_id1 = $1
+                """, message.guild.id
+            )
+            rolemention =  message.guild.get_role(rolemention)
+
+            rolemention = rolemention.mention if rolemention else message.author.mention
+            msg = msg if msg else f" {rolemention} Make Sure the meme is **original**"
             view = thread_channel(user=message.author)
             message = await thread.send(msg, view=view)
             return message
@@ -265,9 +273,8 @@ class listeners(commands.Cog):
             return
         if message.channel.type != discord.ChannelType.text:
             return
-        if message.author.id == self.bot.user.id:
-            print('yes')
 
+        if message.author.id == self.bot.user.id:
             m = message.content.replace('by', '').replace(' ', '').replace('<@', '').replace('>', '')
             member1 = message.guild.get_member(int(m))
             message.author = member1

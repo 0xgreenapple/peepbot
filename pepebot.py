@@ -60,7 +60,8 @@ class pepebot(commands.Bot):
                 emojis=True,
                 guilds=True,
                 message_content=True,
-                reactions=True       ),
+                reactions=True
+            ),
 
             application_id=appid,
             help_command=None,
@@ -235,13 +236,11 @@ class pepebot(commands.Bot):
          ALTER TABLE test.setup ADD COLUMN thread_message TEXT;
          ALTER TABLE test.setup ADD COLUMN rewards;
          ALTER TABLE test.setup ALTER COLUMN vote_time type BIGINT DEFAULT 60;
-        
         """
 
         # turn on or off the whole system in commands
         await self.db.execute(
             """
-           
             CREATE TABLE IF NOT EXISTS test.setup(
                 guild_id1     BIGINT NOT NULL,
                 vote               BIGINT,
@@ -251,10 +250,12 @@ class pepebot(commands.Bot):
                 thread_message     TEXT,
                 rewards            BOOLEAN DEFAULT FALSE,      
                 vote_time          BIGINT DEFAULT 60,
+                mememanager_role   BIGINT,
                 customization_time BIGINT DEFAULT 5,
                 PRIMARY KEY (guild_id1)
             )
         """)
+
 
         # setup channels in the guild
         await self.db.execute(
