@@ -102,7 +102,8 @@ class error_handler(commands.Cog):
 
             if isinstance(error.original, discord.HTTPException) and error.original.code == 50006:
                 name = f"user not found",
-                des = f"give me something to send i cannot send empty message> if you think this is a error report it by clicking on support "
+                des = f"give me something to send i cannot send empty message> if you think this is a error report it " \
+                      f"by clicking on support "
                 return await ctx.error_embed(error_name=name, error_dis=des)
 
             elif isinstance(error.original, menus.CannotEmbedLinks):
@@ -131,8 +132,9 @@ class error_handler(commands.Cog):
             elif isinstance(error.original, (discord.Forbidden, menus.CannotSendMessages)):
                 log.info(
                     f"Missing Permissions for {ctx.command.qualified_name} in #{ctx.channel.name} in {ctx.guild.name} code : {error.original.code}")
-                return await ctx.send('hello'
-                )
+                return
+            elif isinstance(error.original,discord.Forbidden):
+                log.info(f'MISSION PERMISSION IN [guild: {ctx.guild.name}] ID:{ctx.guild.name} user:{ctx.author.name }')
 
             # Discord Server Error
             elif isinstance(error.original, discord.DiscordServerError):

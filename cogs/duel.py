@@ -101,7 +101,7 @@ class duel(commands.Cog):
             url='https://api.imgflip.com/get_memes'
         )
         json = await a.json()
-        memes = json['data']['memes']
+        memes = json['botconfig']['memes']
         ids = []
 
         for i in memes:

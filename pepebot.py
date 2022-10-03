@@ -1,13 +1,12 @@
 """
-peepbot main runner
+Peepbot main runner
 ~~~~~~~~~~~~~~~~~~~
 starter of the peep bot for discord py
-that start the bot and connect to discord gateway.
 :copyright: (c) xgreenapple
 :license: MIT.
 """
 
-__title__ = 'Sussy-bot'
+__title__ = 'Peepbot-bot'
 __author__ = 'xgreenapple'
 __copyright__ = 'Copyright xgreenapple'
 __version__ = '0.0.2a'
@@ -17,6 +16,7 @@ import os
 import time
 import asyncio
 import datetime
+import typing
 from collections import Counter
 
 import aiohttp
@@ -27,23 +27,22 @@ from platform import python_version
 from discord.ext import commands, tasks
 
 from handler import Context
-from handler.database import create_database_pool
+from handler.database import database
 
-"""this is the main file that run the bot"""
 log = logging.getLogger(__name__)
 
 
-# class bot the main code
+# Bot main class inheritance of discord py bot class
 class pepebot(commands.Bot):
-    """Sussy-bot v0.0.2a Interface
+    """peep-bot v0.0.2a Interface
     """
 
     user: discord.ClientUser
     bot_app_info: discord.AppInfo
     owner: 888058231094665266
 
+    # constructor
     def __init__(self):
-
         self.aiohttp_session = None
         allowed_mentions = discord.AllowedMentions(roles=True, everyone=False, users=True)
         self.ready = False
@@ -116,23 +115,41 @@ class pepebot(commands.Bot):
         self.chect = '<:SDVitemtreasure:1008374574502658110>'
 
         self.db = self.database = self.database_connection_pool = None
+        self.Database: typing.Optional[database] = None
         self.connected_to_database = asyncio.Event()
         self.connected_to_database.set()
 
+    # initialize the bot, connect to the websocket
     async def setup_hook(self) -> None:
+        # aiohttp client session we will use it later
+        # while making the request ot other apis
         self.aiohttp_session = aiohttp.ClientSession(loop=self.loop)
-        self.console_log("client session start")
+        self.console_log("session started")
+        # initialize the bot app info
         self.bot_app_info = await self.application_info()
         self.owner_id = self.bot_app_info.owner.id
-        self.console_log("setting up database")
-        await self.initialize_database()
+        self.console_log("setting up database >")
+        # await self.initialize_database()
+        self.Database = database(
+            user=USER,
+            main_database=DBNAME,
+            Password=password,
+            Host=host,
+        )
+        self.Database.startup_task = self.initialize_database
+        await self.Database.initialize()
+        self.db = self.database = self.database_connection_pool = self.Database.db
+
         self.console_log("database setup done")
 
+        # bot startup task
         self.loop.create_task(
             self.startup_tasks(), name="Bot startup tasks"
         )
-        COGS = ['duel', 'setup1', 'help', 'creation', 'economy', 'server', 'error handler','listeners']
+        # the list of cogs that will being initialize late
+        COGS = ['duel', 'setup', 'help', 'creation', 'economy', 'server', 'error handler', 'listeners']
         self.console_log("loading cogs..")
+
         for cog in COGS:
             await self.load_extension(f"cogs.{cog}")
             self.console_log(f"{cog} loaded ")
@@ -140,27 +157,24 @@ class pepebot(commands.Bot):
         await self.tree.sync()
 
     # setup database and create tables
-    async def connect_to_database(self):
-        if self.database_connection_pool:
-            return
-        if self.connected_to_database.is_set():
-            self.connected_to_database.clear()
-            self.db = self.database = self.database_connection_pool = await create_database_pool()
-            self.connected_to_database.set()
-        else:
-            await self.connected_to_database.wait()
+    # async def connect_to_database(self):
+    #     if self.database_connection_pool:
+    #         return
+    #     if self.connected_to_database.is_set():
+    #         self.connected_to_database.clear()
+    #         self.db = self.database = self.database_connection_pool = await create_database_pool()
+    #         self.connected_to_database.set()
+    #     else:
+    #         await self.connected_to_database.wait()
 
     # setup database and create tables
     async def initialize_database(self):
-        await self.connect_to_database()
+        # await self.connect_to_database()
 
-        await self.db.execute("CREATE SCHEMA IF NOT EXISTS test")
-
-        # setup duel commands
-        await self.db.execute(
-            """
-            
-            CREATE TABLE IF NOT EXISTS test.duel(
+        await self.Database.CreateSchema(schema_name="test")
+        await self.Database.CreateTable(
+            table_name="test.duel", columns=
+                """
                 user_id1      BIGINT NOT NULL,
                 user_id2      BIGINT NOT NULL,
                 user_ready    boolean DEFAULT FALSE,
@@ -171,47 +185,42 @@ class pepebot(commands.Bot):
                 r_member_ready      boolean DEFAULT FALSE,
                 img2_id       BIGINT,
                 meme_id       TEXT
-            )
-        """)
-
-        # leaderboard
-        await self.db.execute(
+                """
+        )
+        await self.Database.CreateTable(
+            table_name="test.leaderboard",
+            columns=
             """
-            CREATE TABLE IF NOT EXISTS test.leaderboard(
-                guild_id1     BIGINT NOT NULL,
-                user_id1      BIGINT NOT NULL,
-                likes         BIGINT DEFAULT 0,
-                PRIMARY KEY (guild_id1,user_id1)
-            )
-        """)
-
-        # setup likes for each channel
-        await self.db.execute(
+            guild_id1      BIGINT NOT NULL,
+            channel        BIGINT,
+            likes          BIGINT DEFAULT 5,
+            PRIMARY KEY (guild_id1,channel)
             """
-            CREATE TABLE IF NOT EXISTS test.likes(
-                guild_id1         BIGINT NOT NULL,
-                channel        BIGINT,
-                likes        BIGINT DEFAULT 5,
-                PRIMARY KEY (guild_id1,channel)
-            )
-        """)
-
-        # i don't know what it does
-        await self.db.execute(
+        )
+        await self.Database.CreateTable(
+            table_name="test.likes",
+            columns=
             """
-            CREATE TABLE IF NOT EXISTS test.utils(
-                guild_id1     BIGINT NOT NULL,
-                role_id1      BIGINT,
-                active         BOOLEAN DEFAULT FALSE,
-                PRIMARY KEY (guild_id1)
-            )
-        """)
-
-        # setup rewards that will member get after reaching certain memes in channel
-        await self.db.execute(
+            guild_id1   BIGINT NOT NULL,
+            channel     BIGINT,
+            likes       BIGINT DEFAULT 5,
+            PRIMARY KEY (guild_id1,channel)
             """
-            
-            CREATE TABLE IF NOT EXISTS test.rewards(
+        )
+        await self.Database.CreateTable(
+            table_name="test.utils",
+            columns=
+            """
+            guild_id1     BIGINT NOT NULL,
+            role_id1      BIGINT,
+            active        BOOLEAN DEFAULT FALSE,
+            PRIMARY KEY   (guild_id1)
+            """
+        )
+        await self.Database.CreateTable(
+            table_name="test.rewards",
+            columns=
+            """
                 guild_id1     BIGINT NOT NULL,
                 channel_id1      BIGINT NOT NULL,
                 limit_1      BIGINT,
@@ -221,27 +230,12 @@ class pepebot(commands.Bot):
                 role_2       BIGINT,
                 role_3       BIGINT,
                 PRIMARY KEY (guild_id1,channel_id1)
-            )
-        """)
-
-        # setup how many memes will need to get specific reward
-
-
-        """
-         ALTER TABLE test.setup DROP COLUMN announcement;
-         ALTER TABLE test.setup DROP COLUMN memechannel;
-         ALTER TABLE test.setup DROP COLUMN thread_channel;
-         ALTER TABLE test.setup DROP COLUMN reaction_channel;
-         ALTER TABLE test.setup DROP COLUMN shop_log;
-         ALTER TABLE test.setup ADD COLUMN thread_message TEXT;
-         ALTER TABLE test.setup ADD COLUMN rewards;
-         ALTER TABLE test.setup ALTER COLUMN vote_time type BIGINT DEFAULT 60;
-        """
-
-        # turn on or off the whole system in commands
-        await self.db.execute(
             """
-            CREATE TABLE IF NOT EXISTS test.setup(
+        )
+        await self.Database.CreateTable(
+            table_name="test.setup",
+            columns=
+            """
                 guild_id1     BIGINT NOT NULL,
                 vote               BIGINT,
                 reaction_ls        BOOLEAN DEFAULT FALSE,
@@ -253,15 +247,12 @@ class pepebot(commands.Bot):
                 mememanager_role   BIGINT,
                 customization_time BIGINT DEFAULT 5,
                 PRIMARY KEY (guild_id1)
-            )
-        """)
-
-
-        # setup channels in the guild
-        await self.db.execute(
             """
-            
-            CREATE TABLE IF NOT EXISTS test.channels(
+        )
+        await self.Database.CreateTable(
+            table_name="test.channels",
+            columns=
+            """
                 guild_id1         BIGINT NOT NULL,
                 gallery_l1        BIGINT,
                 gallery_l2        BIGINT,
@@ -275,90 +266,92 @@ class pepebot(commands.Bot):
                 reaction_channel  BIGINT[],
                 shop_log          BIGINT,
                 PRIMARY KEY (guild_id1)
-            )
-        """)
-        await self.db.execute(
             """
-            CREATE TABLE IF NOT EXISTS test.msg(
+        )
+        await self.Database.CreateTable(
+            table_name="test.msg",
+            columns=
+            """
                 guild_id1         BIGINT NOT NULL,
                 channel_id        BIGINT NOT NULL,
                 user_id           BIGINT NOT NULL,
                 limit1             BIGINT DEFAULT 0,
                 PRIMARY KEY (guild_id1,channel_id,user_id)
-            )
-        """)
-        await self.db.execute(
             """
-            CREATE TABLE IF NOT EXISTS test.thread_channel(
+        )
+        await self.Database.CreateTable(
+            table_name="test.thread_channel",
+            columns=
+            """
                 guild_id          BIGINT NOT NULL,
                 channel_id        BIGINT NOT NULL,
                 msg               TEXT,
                 PRIMARY KEY (guild_id,channel_id)
-            )
-        """)
-
-        # economy table
-        await self.db.execute(
+            
             """
-            ALTER TABLE test.economy ALTER COLUMN points type FLOAT;
-            CREATE TABLE IF NOT EXISTS test.economy(
+        )
+        await self.Database.CreateTable(
+            table_name="test.economy",
+            columns=
+            """
                 guild_id          BIGINT NOT NULL,
                 user_id           BIGINT NOT NULL,
                 points            FLOAT DEFAULT 0,
                 PRIMARY KEY (guild_id,user_id)
-            )
-        """)
-
-        # shop tables
-        await self.db.execute(
             """
-            CREATE TABLE IF NOT EXISTS test.shop(
+        )
+        await self.Database.CreateTable(
+            table_name="test.shop",
+            columns=
+            """
                 items              TEXT,
                 cost               INT NOT NULL,
                 emoji              TEXT,
                 PRIMARY KEY		   (items)
-            )
-        """)
-        await self.db.execute(
             """
-            DROP TABLE IF EXISTS test.inv;
-            CREATE TABLE IF NOT EXISTS test.inv(
+        )
+        await self.Database.CreateTable(
+            table_name="test.inv",
+            columns=
+            """
                 guild_id           BIGINT,
                 user_id            BIGINT,
                 items              TEXT,
                 PRIMARY KEY		   (items),
-                FOREIGN KEY (items) REFERENCES test.shop(items) ON DELETE CASCADE ON UPDATE CASCADE
-            )
-        """)
+                FOREIGN KEY (items) REFERENCES test.shop(items) 
+                ON DELETE CASCADE ON UPDATE CASCADE
+            """
+        )
 
     def console_log(self, message):
         print(f"[{datetime.datetime.now().strftime(r'%D %I:%M %p')}] > {self.user} > {message}")
 
-    # do ready tasks
+    # app info
     @property
     async def app_info(self):
         if not hasattr(self, "_app_info"):
             self._app_info = await self.application_info()
         return self._app_info
 
+    # return the bot owner
     @property
     def owner(self) -> discord.User:
         return self.bot_app_info.owner
 
-    async def dm_member(self, user: discord.Member, *args, message=None, embed=None, file=None, view=None, **kwargs):
+    async def dm_member(
+            self, user: discord.Member, *args, message=None,
+            embed=None, file=None, view=None, **kwargs):
+        """deprecated"""
         channel = await user.create_dm()
         await channel.send(content=message, embed=embed, file=file, view=view)
 
     @staticmethod
     async def get_command_prefix(bot, message: discord.Message):
         prefixes = "$"
-
         return prefixes if prefixes else "$"
 
-    # the code that change bot status in every hour.
     async def on_ready(self):
-        self.console_log(f"is shard is rate limited :{self.is_ws_ratelimited()}")
-
+        self.console_log(f"is shard is rate limited? :{self.is_ws_ratelimited()}")
         if not hasattr(self, 'uptime'):
             self.startTime = time.time()
         if not self.ready:
@@ -367,18 +360,18 @@ class pepebot(commands.Bot):
         else:
             self.console_log(f'{self.user}bot reconnected.')
 
+    # change status every 15 minutes
     @tasks.loop(minutes=15)
     async def change_status(self):
         await self.change_presence(status=discord.Status.online,
                                    activity=discord.Activity(
                                        type=discord.ActivityType.listening,
-                                       name=next(self.statues)), )
+                                       name=next(self.statues)))
 
-    # load the prefix on guild join
-    async def on_guild_join(self, guild):  # when the bot joins the guild
+    # events
+    async def on_guild_join(self, guild):
         print(guild)
 
-    # pop the guild prefix on leaving from the guild
     async def on_guild_remove(self, guild):
         print(guild)
 
@@ -387,7 +380,7 @@ class pepebot(commands.Bot):
         await self.change_status.start()
 
     async def start(self) -> None:
-        await super().start(token, reconnect=True, )
+        await super().start(token, reconnect=True)
 
     async def close(self) -> None:
         try:
@@ -401,7 +394,6 @@ class pepebot(commands.Bot):
         except Exception as e:
             print(e)
 
-    # bot monitor
     async def on_resumed(self):
         """print when client resumed"""
         self.console_log(f"{self.user} [resumed]")
@@ -420,15 +412,19 @@ class pepebot(commands.Bot):
         # Close database connection
 
     async def get_context(self, message, /, *, cls=Context.Context) -> Context.Context:
+        """overwrite the context"""
         ctx = await super().get_context(message, cls=cls)
         return ctx
 
-    # this is the code that make the bot automatically response on ping
     async def on_message(self, message):
-
+        """process the command"""
         await self.process_commands(message)
 
 
 token = os.environ.get('BETATOKEN')
+print(token)
 appid = os.environ.get('APPLICATION_ID')
-
+password = os.environ.get('DBPASSWORD')
+host = os.environ.get('DBHOST')
+USER = os.environ.get('DBUSER')
+DBNAME = os.environ.get('DBNAME')

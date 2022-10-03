@@ -318,7 +318,7 @@ class creation(commands.Cog):
         print(response)
         if response.status == 200:
             json = await response.json()
-            url = json['data']['url']
+            url = json['botconfig']['url']
             image = await session.get(url=url)
             _bytes = await image.read()
             file = discord.File(fp=io.BytesIO(_bytes), filename='meme.png')
@@ -1222,7 +1222,6 @@ class creation(commands.Cog):
         a = await get_attachments(ctx=ctx)
 
         type = 'flush'
-
         if not file and not a:
             await ctx.send('give me something to edit must be image or gif')
             return

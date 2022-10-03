@@ -1,29 +1,26 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-
 import time
-
 import logging
 
-import typing
-from discord.ext import commands
-
-from typing import TYPE_CHECKING
-from handler.view import interaction_error_button
-from discord.ui import Button
 import discord
+from discord.ui import Button
+from datetime import datetime, timedelta
+
+from handler.view import interaction_error_button
+from handler.Context import Context
+from pepebot import pepebot
 
 
-async def error_embed(bot, Interaction: discord.Interaction, title: str = None, *, description: str = None,
-                      error_name=None,
-                      error_dis: str = None, colour: discord.Colour = None, timestamp=discord.utils.utcnow()):
-    error_emoji = "<:icons8closewindow100:975326725426778184>"
-    right_emoji = "<:icons8chevronright100:975326725158346774>"
+async def error_embed(
+        bot: pepebot, Interaction: discord.Interaction, title: str = None, *,
+        description: str = None, error_name=None, error_dis: str = None,
+        colour: discord.Colour = None, timestamp=discord.utils.utcnow()):
+    error_emoji = bot.failed_emoji
+    right_emoji = bot.right
 
     if title is None:
         title = f"{error_emoji} ``OPERATION FAILED``"
-
     if not colour:
         colour = bot.embed_colour
 
@@ -46,6 +43,12 @@ async def error_embed(bot, Interaction: discord.Interaction, title: str = None, 
 
     view.message = await Interaction.original_message()
     return view.message
+
+
+async def send_error(bot: pepebot, ctx, *, msg: str = None) -> discord.Message:
+    msg = msg if msg else f"something went wrong {bot.spongebob}"
+    embed = discord.Embed(description=f"{bot.right} {msg}")
+    return await ctx.reply(embed=embed)
 
 
 async def heloo(ctx: discord.Interaction):
@@ -108,3 +111,42 @@ def string_to_delta(input):
         time_in_delta = timedelta(seconds=int(a))
     time_in_delta = time_in_delta
     return time_in_delta
+
+
+async def if_user_mememanager(bot: pepebot, ctx: Context, member: discord.Member = None) -> bool:
+    """ check if a user is a meme manager """
+    member = member if member else ctx.author
+    print(member.name)
+    role = await bot.db.fetchval(
+        """
+        SELECT mememanager_role FROM test.setup WHERE guild_id1 = $1
+        """, member.guild.id
+    )
+    role = ctx.guild.get_role(role) if role else None
+
+    # check the member has meme manager role if not owner
+    if not member.id == ctx.guild.owner.id \
+            or not member.id == await bot.is_owner(member):
+        print("something is happening")
+        if role not in member.roles:
+            return True
+
+    return False
+
+
+async def user_check_self(bot:pepebot,ctx:Context, member:discord.Member) :
+    if ctx.author.id == member.id or not await bot.is_owner(ctx.author):
+        await send_error(
+            bot=bot,
+            ctx=ctx,
+            msg="you cant add point to yourself, only owner can do it :o ")
+        return
+
+
+async def check_perm(
+        ctx: Context, text_channel: discord.TextChannel, user: discord.User = None, *args):
+    for i in args:
+        print(i)
+    # bot = ctx.guild.me
+    # channel = text_channel
+    # perm = channel.permissions_for(bot)

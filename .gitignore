@@ -83,7 +83,7 @@ celerybeat-schedule
 # dotenv
 .env
 dot.env
-data/command.json
+botconfig/command.json
 .DS_Store
 
 # virtualenv
@@ -161,6 +161,6 @@ main.sqlite
 *.gif
 *.DS_Store
 .idea
-data
-data/
+botconfig
+botconfig/
 *.json

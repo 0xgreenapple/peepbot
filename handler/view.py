@@ -53,7 +53,7 @@ class duel_button(discord.ui.View):
                 url='https://api.imgflip.com/get_memes'
             )
             json = await a.json()
-            memes = json['data']['memes']
+            memes = json['botconfig']['memes']
             ids = []
 
             for i in memes:
@@ -178,7 +178,7 @@ class ready_button(discord.ui.View):
         }
         response = await res.request('POST', url, params=params)
         json = await response.json()
-        url = json['data']['url']
+        url = json['botconfig']['url']
         image = await res.get(url=url)
         bytes = await image.read()
         file = discord.File(fp=io.BytesIO(bytes), filename='meme.png')
@@ -199,7 +199,7 @@ class ready_button(discord.ui.View):
         )
 
         json = await a.json()
-        memes = json['data']['memes']
+        memes = json['botconfig']['memes']
         ids = []
 
         for i in memes:
@@ -273,7 +273,7 @@ class ready_button(discord.ui.View):
         res = self.bot.aiohttp_session
         response = await res.request('POST', caption_url, params=params)
         json = await response.json()
-        url = json['data']['url']
+        url = json['botconfig']['url']
         image = await res.get(url=url)
         bytes = await image.read()
 
