@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
+
 class Events:
     """ base class for asyncio tasks
 
@@ -131,7 +132,7 @@ class CheckEconomyItems(Events):
 
         await self.database.Delete(
             data['items'],
-            table='test.shop',
+            table='test.inv',
             condition='items = $1'
         )
         print('deleted')
