@@ -64,6 +64,7 @@ class CheckEconomyItems(Events):
 
     async def InitializeTasks(self):
         """task event manager
+
         initialize the task and sleep until its complete
         run until the bot is closed, if data given is none
         then it will wait for the data to receive
