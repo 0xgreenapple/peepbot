@@ -2,13 +2,13 @@
 Peepbot main runner
 ~~~~~~~~~~~~~~~~~~~
 starter of the peep bot for discord py
-:copyright: (c) xgreenapple
+:copyright: ©xgreenapple
 :license: MIT.
 """
 
-__title__ = 'Peepbot-bot'
+__title__ = 'Peep-bot'
 __author__ = 'xgreenapple'
-__copyright__ = 'Copyright xgreenapple'
+__copyright__ = 'MIT Copyright xgreenapple'
 __version__ = '0.0.2a'
 
 import logging
@@ -17,28 +17,29 @@ import time
 import asyncio
 import datetime
 import typing
-from collections import Counter
-
 import aiohttp
-import discord
-
-from itertools import cycle
-from platform import python_version
-
 import psutil
+
+import discord
 from discord.ext import commands, tasks
 
+from collections import Counter
+from itertools import cycle
+from platform import python_version
+from typing import Optional
+
 from handler import Context
+from handler.utils import emojis, Colour
 from handler.database import database
+from handler.logger import logger
+from handler.tasks import CheckEconomyItems
 
 log = logging.getLogger(__name__)
 
 
-# Bot main class inheritance of discord py bot class
 class pepebot(commands.Bot):
     """peep-bot v0.0.2a Interface
     """
-
     user: discord.ClientUser
     bot_app_info: discord.AppInfo
     owner: 888058231094665266
@@ -50,7 +51,6 @@ class pepebot(commands.Bot):
         self.statues = cycle(
             ["peep"])
         super().__init__(
-
             command_prefix=self.get_command_prefix,
             case_insensitive=True,
             intents=discord.Intents(
@@ -62,63 +62,46 @@ class pepebot(commands.Bot):
                 message_content=True,
                 reactions=True
             ),
-            application_id=appid,
+            application_id=app_ID,
             help_command=None,
-
         )
-        # variables
 
-        self.online_time = datetime.datetime.now(datetime.timezone.utc)
-        self.spam_cooldown = commands.CooldownMapping.from_cooldown(
-            5.0, 6.0, commands.BucketType.user)
+        # variables
         self.spam_count = Counter()
+        self.taskrunner: Optional[CheckEconomyItems] = None
         self.version = "0.0.1a"
         self.owner_id = 888058231094665266
         self.message_prefix_s = "peep bot"
-        self.bot_user_agent = "pepe (Discord Bot)"
+        self.bot_user_agent = "peep (Discord Bot)"
+        self.logger: typing.Optional[logger] = None
+        self.emoji = emojis()
+        self.online_time = datetime.datetime.now(datetime.timezone.utc)
+        self.spam_cooldown = commands.CooldownMapping.from_cooldown(
+            5.0, 6.0, commands.BucketType.user)
         self.user_agent = (
             "peep "
             f"Python/{python_version()} "
             f"aiohttp/{aiohttp.__version__}"
             f"discord.py/{discord.__version__}"
         )
+        self.colors = Colour()
 
-        # colours
-        self.bot_color = 0xa68ee3
-        self.pink_color = 0xff0f8c
-        self.blue_color = 0x356eff
-        self.embed_colour = 0x2E3136
-        self.cyan_color = 0x00ffad
-        self.white_color = 0xffffff
-        self.black_color = 0x000000
-        self.youtube_color = 0xcd201f
-        self.violet_color = 0xba9aeb
-        self.green_color = 0x00ff85
-        self.yellow_color = 0xffe000
-        self.embed_default_colour = 0x00ffad
-        self.dark_theme_colour = 0x36393e
-
-        # Emojis
-        self.channel_emoji = '<:channel:990574854027743282>'
-        self.search_emoji = '<:icons8search100:975326725472944168>'
-        self.failed_emoji = '<:icons8closewindow100:975326725426778184>'
-        self.success_emoji = '<:icons8ok100:975326724747304992>'
-        self.right = '<:right:975326725158346774>'
-        self.file_emoji = '<:icons8document100:975326725229641781>'
-        self.moderator_emoji = "<:icons8protect100:975326725502296104>"
-        self.spongebob = "<:AYS_sadspongebob:1005427777345949717>"
-        self.doge = "<a:DogeDance:1005429259017392169>"
-        self.like = '<:plusOne:1008402662070427668>'
-        self.dislike = '<:dislike:1008403162874515649>'
-        self.coin = '<a:coin1:1008074318082752583>'
-        self.custom_pfp = '<:SDVchargunther:1008419132636663910>'
-        self.shoutout = '<:AYS_WumpsShoutOut:1008421369379311767>'
-        self.chect = '<:SDVitemtreasure:1008374574502658110>'
-
+        # database variables
         self.db = self.database = self.database_connection_pool = None
-        self.Database: typing.Optional[database] = None
+        self.Database: Optional[database] = None
         self.connected_to_database = asyncio.Event()
         self.connected_to_database.set()
+
+    def __getattr__(self, item):
+        """ called when an attribute called is not exists in class,
+        checks if attribute exists in the emojis class
+        and returns it else raise the attribute error
+        """
+        if hasattr(self.emoji, item):
+            return getattr(self.emoji, item)
+        elif hasattr(self.colors, item):
+            return getattr(self.colors, item)
+        raise AttributeError(f"'{item}' attribute in {self.__class__.__name__} class does not exists")
 
     # initialize the bot, connect to the websocket
     async def setup_hook(self) -> None:
@@ -140,9 +123,7 @@ class pepebot(commands.Bot):
         self.Database.startup_task = self.initialize_database
         await self.Database.initialize()
         self.db = self.database = self.database_connection_pool = self.Database.db
-
         self.console_log("database setup done")
-
         # bot startup task
         self.loop.create_task(
             self.startup_tasks(), name="Bot startup tasks"
@@ -158,12 +139,31 @@ class pepebot(commands.Bot):
                 'listeners']
 
         self.console_log("loading cogs..")
-
         for cog in COGS:
             await self.load_extension(f"cogs.{cog}")
             self.console_log(f"{cog} loaded ")
         self.console_log("setup hook complete")
+        log.info("handling the timer")
         await self.tree.sync()
+
+    async def on_ready(self):
+        """ Do startup task when bot successfully connects to database"""
+        self.console_log(f"is shard rate limited? :{self.is_ws_ratelimited()}")
+        if not hasattr(self, 'uptime'):
+            self.startTime = time.time()
+        if not self.ready:
+            self.ready = True
+            self.console_log(f"bot is logged as {self.user}")
+        else:
+            self.console_log(f'{self.user} bot reconnected.')
+
+    async def startup_tasks(self):
+        """ startup tasks """
+        await self.wait_until_ready()
+        # starts bot status loop
+        await self.change_status.start()
+        # initialize database event manager
+        self.taskrunner = CheckEconomyItems(self)
 
     # Setup every tables :)
     async def initialize_database(self):
@@ -235,7 +235,6 @@ class pepebot(commands.Bot):
             PRIMARY KEY (guild_id1,channel_id1)
             """
         )
-
         # store the settings stats
         await self.Database.CreateTable(
             table_name="test.setup",
@@ -295,7 +294,6 @@ class pepebot(commands.Bot):
             channel_id        BIGINT NOT NULL,
             msg               TEXT,
             PRIMARY KEY (guild_id,channel_id)
-            
             """
         )
         # store economy related stuffs, most valuable one
@@ -329,66 +327,74 @@ class pepebot(commands.Bot):
             user_id            BIGINT,
             items              TEXT,
             PRIMARY KEY		   (items),
+            expired            TIMESTAMP,
             FOREIGN KEY (items) REFERENCES test.shop(items) 
             ON DELETE CASCADE ON UPDATE CASCADE
             """
         )
+        # await self.Database.CreateTable(
+        #     table_name="test.booster",
+        #     columns=
+        #     """
+        #     guild_id      BIGINT,
+        #     item_name     TEXT,
+        #     threshold     FLOAT,
+        #     expired       INTERVAL DEFAULT NULL,
+        #     PRIMARY KEY	  (guild_id)
+        #     """
+        # )
+        #
+        # await self.Database.delete_column(table='test.shop', column='expired')
+        # await self.Database.AddColumn(
+        #     table='test.shop',
+        #     column='expired',
+        #     datatype='INTERVAL DEFAULT NULL'
+        # )
+        # await self.Database.AddColumn(
+        #     table="test.shop",
+        #     column="expired",
+        #     datatype="TIMESTAMP DEFAULT NULL",
+        #     check_if_exists=True
+        # )
+        # await self.Database.AddColumn(
+        #     table="test.inv",
+        #     column="expired",
+        #     datatype="TIMESTAMP DEFAULT NULL",
+        #     check_if_exists=True
+        # )
 
-    # log to console
     def console_log(self, message):
+        """prints to console"""
         print(f"[{datetime.datetime.now().strftime(r'%D %I:%M %p')}] > {self.user} > {message}")
 
-    # app info
+    @staticmethod
+    async def get_command_prefix(bot, message: discord.Message):
+        """ Returns bot command prefix """
+        prefixes = "%"
+        return prefixes if prefixes else "%"
+
     @property
     async def app_info(self):
+        """ returns bot app info """
         if not hasattr(self, "_app_info"):
             self._app_info = await self.application_info()
         return self._app_info
 
-    # return the bot owner
     @property
     def owner(self) -> discord.User:
+        """ returns bot owner info """
         return self.bot_app_info.owner
-
-    # dm member we don't use it anymore check handler/context.py
-    async def dm_member(
-            self, user: discord.Member, *args, message=None,
-            embed=None, file=None, view=None, **kwargs):
-        """deprecated"""
-        channel = await user.create_dm()
-        await channel.send(content=message, embed=embed, file=file, view=view)
-
-    # return bot prefix
-    @staticmethod
-    async def get_command_prefix(bot, message: discord.Message):
-        prefixes = "$"
-        return prefixes if prefixes else "$"
-
-    # do ready tasks
-    async def on_ready(self):
-
-        self.console_log(f"is shard is rate limited? :{self.is_ws_ratelimited()}")
-        if not hasattr(self, 'uptime'):
-            self.startTime = time.time()
-        if not self.ready:
-            self.ready = True
-            self.console_log(f"bot is logged as {self.user}")
-        else:
-            self.console_log(f'{self.user}bot reconnected.')
 
     # change bot status message every 15 minutes
     @tasks.loop(minutes=15)
     async def change_status(self):
+        """ change the bot status message every in every 15 minutes """
         await self.change_presence(
             status=discord.Status.online,
             activity=discord.Activity(
                 type=discord.ActivityType.listening,
-                name=next(self.statues)))
-
-    # do startup while initializing the bot
-    async def startup_tasks(self):
-        await self.wait_until_ready()
-        await self.change_status.start()
+                name=next(self.statues))
+        )
 
     """ Events """
 
@@ -399,15 +405,16 @@ class pepebot(commands.Bot):
     async def on_guild_remove(self, guild):
         log.warning("left a guild : ", guild)
 
-    # start the bot
     async def start(self) -> None:
+        """ super method to run the bot"""
         await super().start(token, reconnect=True)
 
-    # do closeup tasks
     async def close(self) -> None:
+        """ do closeup task when bot closes """
         try:
             self.console_log(f"closing bot session")
             await self.aiohttp_session.close()
+            await self.Database.Cleanup()
         except Exception as e:
             print(e)
         try:
@@ -429,23 +436,20 @@ class pepebot(commands.Bot):
         self.console_log(f"{self.user} is disconnected")
 
     async def get_context(self, message, /, *, cls=Context.Context) -> Context.Context:
-        """overwrite the context"""
+        """ overwrite the new bot context"""
         ctx = await super().get_context(message, cls=cls)
         return ctx
 
-    # we don't touch it anymore
     async def on_message(self, message):
-        """process the command"""
+        """ called when the message is received process the commands"""
         process = psutil.Process(os.getpid())
         print(process.memory_info().rss / 1024 ** 2)
-
         await self.process_commands(message)
 
 
 # get environment variables
 token = os.environ.get('BETATOKEN')
-print(token)
-appid = os.environ.get('APPLICATION_ID')
+app_ID = os.environ.get('APPLICATION_ID')
 password = os.environ.get('DBPASSWORD')
 host = os.environ.get('DBHOST')
 USER = os.environ.get('DBUSER')
