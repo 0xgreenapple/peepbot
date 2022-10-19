@@ -12,4 +12,7 @@ from image manipulation to economy system.
 - meme starboard
 - auto threads 
 - image manipulation commands
-- supports slash command 
+- supports slash command
+
+# documentation
+**coming soon :)**
