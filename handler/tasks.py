@@ -32,6 +32,7 @@ class Events:
 
     def __init__(self, bot):
         self.bot: pepebot = bot
+        self.current_data = None
         self._tasks: asyncio.Task = self.LoadTasks()
         self._next_data: asyncio.Event = asyncio.Event()
         self.database = self.bot.Database
@@ -82,7 +83,7 @@ class CheckEconomyItems(Events):
                     _log.warning("skipping this event loop timestamp is null")
                     continue
                 # get the current time
-                now = datetime.now()
+                now = datetime.utcnow()
                 # get the timestamp into seconds, and sleep until its complete
                 if time > now:
                     sleep_until: int = (data['expired'] - now).total_seconds()
@@ -99,7 +100,6 @@ class CheckEconomyItems(Events):
             self._tasks = self.LoadTasks()
         except Exception as e:
             # print the Exception
-            print('Ignoring exception in exception in loop', file=sys.stderr)
             traceback.print_exception(type(e), e, e.__traceback__, file=sys.stderr)
 
     async def GetData(self):
@@ -112,6 +112,7 @@ class CheckEconomyItems(Events):
             row=True,
             Filter="ORDER BY expired LIMIT 1"
         )
+        self.current_data = data
         return data
 
     async def Get_initialize_data(self):
@@ -130,19 +131,21 @@ class CheckEconomyItems(Events):
         return data
 
     async def HandelEvent(self, data):
+        await self._DeleteColumn(data)
 
+    async def _DeleteColumn(self, data):
         await self.database.Delete(
             data['items'],
             table='test.inv',
             condition='items = $1'
         )
-        print('deleted')
-        pass
 
-    async def _DeleteColumn(self,data):
-        await self.database.Delete(
-            data['items'],
-            table='test.shop',
-            condition='items = $1'
-        )
+    async def ReloadTask(self):
+        """ reinitialize the tasks"""
+        self._tasks.cancel()
+        self._tasks = self.LoadTasks()
+
+    async def SetTasks(self):
+        """ resume waiting tasks """
+        self._next_data.set()
 
