@@ -1,84 +1,93 @@
 from __future__ import annotations
 
-import time
-import typing
-from typing import TYPE_CHECKING
+import datetime
+import zoneinfo
 import logging
-import discord
+import time
 
-from handler.Context import Context
-from handler.errors import NotEnoughMembers, NotFound, ItemNotFound, BadRequest
-from handler.pagination import bal_leaderboard
-from handler.view import accept_bought
-from pepebot import pepebot
+import discord
+import typing
+
+from typing import TYPE_CHECKING
+
+from dateutil import tz
+
+if TYPE_CHECKING:
+    from pepebot import pepebot
+
 from discord.ext import commands
 from discord.ext.commands import BucketType
+
+from handler.view import accept_bought
+from handler.Context import Context
 from handler.utils import (
     send_error,
     if_user_mememanager,
     user_check_self,
     is_Meme_manager,
     string_to_delta,
-    GetRelativeTime
-)
-from handler.economy import (
-    Economy,
-    UserHasNotEnoughCoins,
-    DataDoesNotExists
-)
+    GetRelativeTime, utc2local)
+from handler.errors import NotEnoughMembers, NotFound, ItemNotFound, BadRequest
+from handler.economy import Economy, NotEnoughCoins, DataDoesNotExists
+from handler.pagination import bal_leaderboard
 
+# logger
 log = logging.getLogger(__name__)
 
 
 class Points_Leaderboard(bal_leaderboard):
     """ returns points leaderboard pages
     """
-    def __init__(self, entries: list, *, ctx: Context, per_page: int = 12, title: str = None):
-        converted = entries
-        print(entries)
-        super().__init__(converted, per_page=per_page, ctx=ctx)
 
-def mycheck():  # Creating the check
-    async def startCheck(ctx: Context):
-        return ctx.author.id == ctx.guild.owner.id or ctx.author.id == 888058231094665266
-    return commands.check(startCheck)
+    def __init__(self,
+                 entries: list, *,
+                 ctx: Context,
+                 per_page: int = 12,
+                 title: str = None):
+        converted = entries
+        super().__init__(converted, per_page=per_page, ctx=ctx)
 
 
 class economy(commands.Cog):
-    """economy cog class for the bot"""
+    """ economy cog class for the bot
+    """
     bot: pepebot
 
     def __init__(self, bot: pepebot) -> None:
         self.bot = bot
         self.economy = Economy(self.bot.Database)
 
-    @commands.command(name="do")
-    async def dosomething(self, ctx: Context, item_name: str):
-        await ctx.send(self.bot.glas)
-
     @commands.command(name='add', aliases=['add_points'], description="Add points to user")
     @is_Meme_manager()
     async def add_points(self, ctx: Context, member: discord.Member, points: float = 0.1):
-        # add coins to user bank column
+        """ add coins to use bank """
+        ogPoints = points
+        HasBooster, boost = await self.economy.HasBooster(user=member)
+        if HasBooster:
+            points = boost['threshold'] * points
+            if points < 0:
+                points = 0
+
         await self.economy.addUserCoins(user=member, coins=points)
         # the total points
         total = await self.economy.getUserCoins(member)
         embed = discord.Embed(
             title='``points added!``',
             description=f'>>> {self.bot.right} **user:**{member.mention} \n'
-                        f'{self.bot.coin} **points given:** {points} \n'
+                        f'⭐ **multiplier:** {boost["threshold"] if HasBooster else "none"} \n'
+                        f'{self.bot.coin} **points given:** {ogPoints}'
+                        f'{" -> " + str(points) if HasBooster else ""} \n '
                         f'{self.bot.emoji.basket} **total points:** {total}'
         )
         await ctx.send(embed=embed)
 
     @commands.command(
-        name='reset_points', aliases=['reset_coins'], description='reset the user points to given value')
+        name='reset_points', aliases=['reset_coins'], description='reset the user points to given point value')
     @is_Meme_manager()
     async def reset_coins(self, ctx: Context, member: discord.Member, point: float):
 
         # resting points and get total coins
-        await self.economy.setUserCoins(member, coins=point)
-        total = await self.economy.getUserCoins(member)
+        total = await self.economy.setUserCoins(member, coins=point)
         embed = discord.Embed(
             description=f'>>> {self.bot.right} User points has been reset to ``{point}``,'
                         f' now user has ``{total}`` {self.bot.coin} points'
@@ -87,16 +96,15 @@ class economy(commands.Cog):
 
     @commands.command(name='remove', aliases=['remove_points', 'remove_coins'])
     async def remove_points(self, ctx: Context, member: discord.Member, points: float = 1):
-
-        # gets total user coins
-        total = await self.economy.getUserCoins(user=member)
-        if not total:
+        total = None
+        # remove the given points to user
+        try:
+            total = await self.economy.removeUserCoins(user=member, coins=points)
+        except NotEnoughCoins:
             embed = discord.Embed(
                 description=f'{self.bot.right} this user has no points to remove')
             await ctx.send(embed=embed)
             return
-        # remove the given points to user
-        total = await self.economy.removeUserCoins(user=member, coins=points)
         embed = discord.Embed(
             title='``points removed!``',
             description=f'>>> {self.bot.right} **user:**{member.mention} \n'
@@ -108,13 +116,6 @@ class economy(commands.Cog):
     @commands.command(name='reset', description="set the user coins to 0")
     @is_Meme_manager()
     async def reset_points(self, ctx: Context, member: discord.Member):
-        total = await self.economy.getUserCoins(user=member)
-        if not total:
-            embed = discord.Embed(
-                description=f'{self.bot.right} this user already has 0 points')
-            await ctx.send(embed=embed)
-            return
-
         # set user coins to 0
         total = await self.economy.setUserCoins(user=member)
         embed = discord.Embed(title='``points reset!``')
@@ -133,17 +134,17 @@ class economy(commands.Cog):
                 author=ctx.author,
                 user=member,
                 coins=abs(points))
-        except UserHasNotEnoughCoins:  # catch the exception , raised when user don't have enough coins
+        except NotEnoughCoins:  # catch the exception , raised when user don't have enough coins
             embed = discord.Embed(
-                description=f'{self.bot.right} you dont enough points to give')
+                description=f'{self.bot.right} {NotEnoughCoins}')
             await ctx.send(embed=embed)
             return
 
         embed = discord.Embed(title='``transfer!``')
-        embed.description=f'>>> {self.bot.right} **user:**{member.mention} \n' \
-                        f'{self.bot.emoji.coin} **coins given:** {points} \n' \
-                        f'{self.bot.emoji.basket} **total points:** {total_member}\n' \
-                        f'{self.bot.right} now you have {total_author} {self.bot.coin}'
+        embed.description = f'>>> {self.bot.right} **user:**{member.mention} \n' \
+                            f'{self.bot.emoji.coin} **coins given:** {points} \n' \
+                            f'{self.bot.emoji.basket} **total points:** {total_member}\n' \
+                            f'{self.bot.right} now you have {total_author} {self.bot.coin}'
         await ctx.send(embed=embed)
 
     @commands.command(name='balance', aliases=['bal', 'points'], description="get user balance and stats")
@@ -154,7 +155,7 @@ class economy(commands.Cog):
         # get the stats parameters
         try:
             top_rank, User_position, User_likes = await self.economy.getUser_stats(member)
-        except DataDoesNotExists or NotEnoughMembers:
+        except (DataDoesNotExists, NotEnoughMembers):
             embed = discord.Embed(
                 title='``stats``',
                 description=f'>>> {self.bot.right} user: {member.mention} \n'
@@ -162,18 +163,20 @@ class economy(commands.Cog):
                 colour=discord.Colour.blurple(), timestamp=discord.utils.utcnow())
             await ctx.send(embed=embed)
             return
-        embed = discord.Embed(title='``stats``')
+        title = f'>>> {self.bot.right} user: {user.mention} ' if user else ""
+        embed = discord.Embed(title='``stats``',
+                              description=f""">>> {title} 
+                                             {self.bot.emoji.coin} **total points:** {User_likes} 
+                                             {self.bot.emoji.iconsword} **rank:#**{User_position} 
+                                             {self.bot.emoji.samurai} **{user if user else ""} is top:** {top_rank} """)
         embed.colour = discord.Colour.blurple()
         embed.timestamp = discord.utils.utcnow()
-        embed.description=f'>>> {self.bot.right} user: {user.mention} \n' if user else "" \
-                        f'{self.bot.emoji.coin} **total points:** {User_likes} \n' \
-                        f'{self.bot.emoji.iconsword} **rank:#**{User_position} \n' \
-                        f'{self.bot.emoji.samurai} **{user if user else ""} is top:** {top_rank} ',
         await ctx.send(embed=embed)
 
     @commands.command(name='leaderboard', aliases=['lb'],
                       description="gets the guild point leaderboard")
     async def pointsLeaderboard(self, ctx: Context):
+        """fetch the users order by maximum coins"""
         UserList = await self.economy.getAll_users(
             ctx.guild.id,
             Filter="""order by points desc
@@ -195,13 +198,13 @@ class economy(commands.Cog):
                 title=f'``Leaderboard for {ctx.guild.name} : ``{len(users)}``')
             await warnings.start()
         else:
-            await ctx.error_embed (
+            await ctx.error_embed(
                 description='the leaderboard for this guild is currently not available')
             return
 
     @commands.command(name='add_item')
     @commands.is_owner()
-    async def add_items(self, ctx: Context,cost: int, emoji: str, time: str = None, *,
+    async def add_items(self, ctx: Context, cost: int, emoji: str, time: str = None, *,
                         name: str):
         """ add items to the shop database column"""
         delta = string_to_delta(time) if time != '0' else None
@@ -215,20 +218,19 @@ class economy(commands.Cog):
     async def remove_user_item(
             self, ctx: Context, member: discord.Member, forced: typing.Literal['true', 'false'] = 'true', *,
             itemname: str):
-        """remove user items from the list"""
+        """ remove user items from the list """
+
         # refund the points if set to true
         forced = True if forced == 'true' else False
         try:
-            await self.economy.GetItemNamed(item=itemname)
+            await self.economy.removeUserItems(user=member, itemname=itemname, forced=forced)
         except NotFound:
-            await ctx.error_embed(description="this item not exists")
-        try:
-            await self.economy.getUserItem(itemname=itemname, user=member)
-        except NotFound:
+            await ctx.error_embed(description="this item does not exist")
+            return
+        except BadRequest:
             await ctx.error_embed(
                 description=f'the user already not have the item : {itemname}')
-
-        await self.economy.removeUserItems(user=member, itemname=itemname, forced=forced)
+            return
         await ctx.send(embed=discord.Embed(
             description=f'>>> item {itemname} removed from {member.mention},'
                         f'{"** the points refunded **" if not forced else ""}'))
@@ -249,15 +251,24 @@ class economy(commands.Cog):
     @commands.command(name='shop')
     @commands.cooldown(1, 5, BucketType.member)
     async def shop(self, ctx: Context):
+        booster = await self.economy.GetBooster(guild_id=ctx.guild.id)
         # get the list of items
-        items = await self.economy.GetShopItems()
+        try:
+            items = await self.economy.GetShopItems()
+        except:
+            await ctx.error_embed(description="this guild doesnt have a shop")
+            return
         shop_items = []
-
         # formate the list
         for i in items:
             date = i['expired'] if i['expired'] else None
+            # check if item is the item is point booster
+            isBooster = await self.economy.isPoint_booster(
+                item_name=i["items"], guild_id=ctx.guild.id)
             shop_items.append(
-                f'{i["emoji"]} **{i["items"]}** ``cost``: {i["cost"]} {self.bot.coin} '
+                f'{i["emoji"]} **{i["items"]}**'
+                f'{booster["threshold"] if isBooster else ""}'
+                f'``cost``: {i["cost"]} {self.bot.coin}'
                 f'{f"expires after {GetRelativeTime(date)}" if i["expired"] else ""} \n')
         embed = discord.Embed(
             title='``shop``')
@@ -269,76 +280,66 @@ class economy(commands.Cog):
     @commands.command(name='buy')
     @commands.cooldown(1, 5, BucketType.member)
     async def buy(self, ctx: Context, *, item: str):
-
+        """ buy an item from the shop """
         embed = discord.Embed()
         try:
             cost, emoji, total, expired, Pointsbooster, threshold = \
-                await self.economy.Buyitem(user=ctx.author,item_name=item,bot=self.bot)
+                await self.economy.Buyitem(user=ctx.author, item_name=item, bot=self.bot)
         except ItemNotFound:
-            embed.description = f'{self.bot.right} item {item} doesnt not exists,pls check ``$shop``'
+            embed.description = f'{self.bot.right} item {item} doesnt not exists,pls check ``{self.bot.command_prefix}shop``'
             await ctx.send(embed=embed)
             return
         except BadRequest:
             embed.description = f'{self.bot.right} you cant buy more than one item'
             await ctx.send(embed=embed)
             return
-        except (DataDoesNotExists,UserHasNotEnoughCoins):
+        except (DataDoesNotExists, NotEnoughCoins):
             embed.description = f'{self.bot.right} you dont have enough coins to buy  {item}'
             await ctx.send(embed=embed)
             return
 
+        future = expired + datetime.datetime.now() if expired else None
         if Pointsbooster:
             embed.description = f'{self.bot.right}  successfully purchased point booster {emoji} **{item}** ' \
-                            f'now you are getting {threshold}x coins item will expire 1 min'
+                                f'now you are getting {threshold}x coins item will ' \
+                                f'expire <t:{round(time.mktime(future.timetuple()))}:R>'
             await ctx.send(embed=embed)
             return
+        future_time = f" item will expire <t:{round(time.mktime(future.timetuple()))}:R>" if future else ''
         embed.description = f'{self.bot.right} you successfully purchased {emoji} **{item}** ' \
-                            f'now you have {total} {self.bot.coin} coins'
-        await ctx.send(embed=embed)
+                            f'now you have {total} {self.bot.coin} coins \n {future_time}'
 
-        # channel = await self.bot.db.fetchval(
-        #     """SELECT shop_log FROM test.setup WHERE guild_id1 = $1""", ctx.guild.id
-        # )
-        # channel = self.bot.get_channel(channel)
-        # if channel:
-        #     view = accept_bought(bot=self.bot, item=itemname, user=ctx.author)
-        #     embed = discord.Embed(title='sold',
-        #                           description=f'{self.bot.right} {ctx.author.mention} purchased {emoji} **{itemname}**',
-        #                           timestamp=discord.utils.utcnow())
-        #     await channel.send(embed=embed, view=view)
+        await ctx.send(embed=embed)
 
     @commands.command(name='inventory', aliases=['inv'])
     @commands.cooldown(1, 5, BucketType.user)
     async def inventory(self, ctx: Context, user: discord.Member = None):
-        users = user if user else ctx.author
-
-        inv = await self.bot.db.fetch(
-            """SELECT items FROM test.inv WHERE guild_id = $1 AND user_id = $2""", users.guild.id, users.id
-        )
+        User = user if user else ctx.author
         embed = discord.Embed()
-        if len(inv) == 0 or inv == None:
+        try:
+            inv = await self.economy.getUserItems(User, row=True)
+        except DataDoesNotExists:
             if user:
                 embed.description = f'{self.bot.right} this user has no items'
                 await ctx.send(embed=embed)
                 return
             else:
-                embed.description = f'{self.bot.right} you have  no items'
+                embed.description = f'{self.bot.right} you have no items'
                 await ctx.send(embed=embed)
                 return
 
-        o = await self.bot.db.fetch(
-            """SELECT * FROM test.shop"""
-        )
         shop_items = []
-
-        for i in o:
-            for j in inv:
-                if i['items'] == j['items']:
-                    shop_items.append(f'{i["emoji"]} **{i["items"]}** \n')
+        for i in inv:
+            item = await self.economy.GetItemNamed(item=i["items"])
+            future: typing.Optional[datetime.datetime] = i["expired"]
+            if future:
+                future = utc2local(future)
+            expiring = f"expire <t:{round(time.mktime(future.timetuple()))}:R>" if i["expired"] else ""
+            shop_items.append(f'{item["emoji"]} **{i["items"]}** {expiring}\n')
         if user:
             embed = discord.Embed(
                 title='``inventory``',
-                description=f'{self.bot.right} {users.mention}'
+                description=f'{self.bot.right} {User.mention}'
             )
         else:
             embed = discord.Embed(
@@ -347,8 +348,40 @@ class economy(commands.Cog):
         embed.add_field(
             name=f"<:SDVitemtreasure:1008374574502658110> items",
             value=f">>> {''.join(shop_items)}")
-
         await ctx.send(embed=embed)
+
+    @commands.command(name='update_booster', description="update booster from the database")
+    @commands.is_owner()
+    async def update_booster(
+            self, ctx: Context, cost: float, emoji: str, threshold: float, expired: str, *, name: str):
+        delta = string_to_delta(expired)
+        await self.economy.Insert_Booster(
+            name=name, guild_id=ctx.guild.id, threshold=threshold, expired=delta)
+        await self.economy.UpdateShopBooster(
+            guild_id=ctx.guild.id,
+            cost=cost,
+            emoji=emoji
+        )
+        await ctx.send("done")
+
+    @commands.command(name='insert_booster', description="update booster from the database")
+    @commands.is_owner()
+    async def insert_booster(self, ctx: Context, name: str, expired: str, threshold: float):
+        delta = string_to_delta(expired)
+        await self.economy.Insert_Booster(name=name.lower(), guild_id=ctx.guild.id, threshold=threshold, expired=delta)
+        await ctx.send('done')
+
+    @commands.command(name='addBooster', description="add booster to the shop")
+    @commands.is_owner()
+    async def addBooster(self, ctx: Context, cost: int, emoji: str = "⭐"):
+        try:
+            await self.economy.UpdateShopBooster(
+                guild_id=ctx.guild.id,
+                cost=cost,
+                emoji=emoji)
+        except NotFound:
+            await ctx.error_embed(description="booster not available for the guild")
+        await ctx.send("done")
 
 
 async def setup(bot: pepebot) -> None:
