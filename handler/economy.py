@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+
 """
 economy class for peepbot
 ~~~~~~~~~~~~~~~~~~~
 :copyright: (c) xgreenapple(green apple)
 :license: MIT see LICENSE for more details
 """
+
 import datetime
 import typing
 from typing import TYPE_CHECKING
@@ -13,10 +16,14 @@ import discord
 
 from handler.database import database
 from handler.errors import (
-    UserHasNotEnoughCoins,
+    NotEnoughCoins,
     NotEnoughMembers,
-    DataDoesNotExists, NotFound, ItemNotFound, BadRequest
+    DataDoesNotExists,
+    NotFound,
+    ItemNotFound,
+    BadRequest
 )
+
 if TYPE_CHECKING:
     from pepebot import pepebot
 
@@ -25,8 +32,9 @@ if TYPE_CHECKING:
 class Economy:
     def __init__(self, Database: database):
         self.database: database = Database
-        self.economy_table: str = "test.economy"
+        self.economy_table: str = "peep.economy"
         self.coin_column = "points"
+        self.boosterCache: dict = {}
 
     # return user coins
     async def getUserCoins(self, user: discord.Member) -> typing.Optional[int]:
@@ -42,6 +50,7 @@ class Economy:
     # add user coins
     async def addUserCoins(self, user: discord.Member, coins: float = 1):
         coins = abs(coins)
+
         await self.database.Insert(
             user.guild.id,
             user.id,
@@ -58,11 +67,12 @@ class Economy:
     # remove user coins
     async def removeUserCoins(self, user: discord.Member, coins: float = 1):
         total = await self.getUserCoins(user)
+
         if total == 0:
-            return 0
+            raise NotEnoughCoins("user already has 0 coins")
+
         sub_points = round(total - coins, 2)
         sub_points = sub_points if sub_points >= 0 else 0
-
         await self.setUserCoins(user=user, coins=sub_points)
         total = await self.getUserCoins(user)
         return round(total, 2)
@@ -88,11 +98,8 @@ class Economy:
         author_coins = await self.getUserCoins(author)
         user_coins = await self.getUserCoins(user)
 
-        if author_coins == 0 or author_coins is None:
-            raise UserHasNotEnoughCoins("the user has 0 coins")
-        if coins > author_coins:
-            raise UserHasNotEnoughCoins(
-                "user has not enough coins to give")
+        if author_coins == 0 or author_coins is None or coins > author_coins:
+            raise NotEnoughCoins("you don't have enough coins to give")
 
         # add coins to user
         member_total = await self.addUserCoins(user=user, coins=coins)
@@ -106,7 +113,7 @@ class Economy:
 
         List = await self.database.Select(
             Guild_id,
-            table="test.economy",
+            table="peep.economy",
             columns="user_id, points" if not Fetch_row else "*",
             condition="guild_id = $1",
             return_everything=True,
@@ -122,24 +129,21 @@ class Economy:
         """
 
         UserList = await self.getAll_users(User.guild.id)
-        print(UserList)
         if not UserList or len(UserList) == 0:
-            raise NotEnoughMembers(" this guild leaderboard is currently not available")
-
-        print("12 ", UserList)
+            raise NotEnoughMembers(" this guild leaderboard is currently unavailable")
 
         User_position: int = 0
-        User_likes: int = 0
+        User_points: int = 0
 
-        # Find the user in asynpg List
+        # Find the user in async List
         for i in UserList:
             User_position += 1
             if User.id == i['user_id']:
-                User_likes = i['points']
+                User_points = i['points']
                 break
 
         # check is user position or likes is None
-        if User_likes == 0:
+        if User_points == 0:
             raise DataDoesNotExists(User)
 
         percent = User_position / len(UserList)
@@ -154,14 +158,14 @@ class Economy:
         else:
             top_rank = '90%'
 
-        return top_rank, User_position, round(User_likes, 2)
+        return top_rank, User_position, round(User_points, 2)
 
     """Get shop Related stuffs"""
 
     # get shop items
     async def GetShopItems(self, Column: str = "*"):
         raw_items = await self.database.Select(
-            table="test.shop",
+            table="peep.shop",
             columns=Column,
             return_everything=True
         )
@@ -174,13 +178,12 @@ class Economy:
         item = await self.database.Select(
             item,
             return_everything=True,
-            table="test.shop",
+            table="peep.shop",
             condition="items = $1",
             columns=column
         )
         if not item or not len(item):
             raise NotFound("this item doesnt exist")
-        print('item ; ',item)
         return item[0]
 
     # get a item from user
@@ -189,29 +192,25 @@ class Economy:
             itemname,
             user.id,
             user.guild.id,
-            table="test.inv",
+            table="peep.inv",
             condition="items = $1 AND user_id = $2 AND guild_id = $3",
             columns="items"
         )
-        if not user:
-            raise NotFound()
         return items
-
         # get a item from user
 
-    async def getUserItems(self, user: discord.Member):
+    async def getUserItems(self, user: discord.Member, row: bool = False):
         items = await self.database.Select(
             user.id,
             user.guild.id,
-            table="test.inv",
-            condition=" user_id = $1 AND guild_id = $2",
-            columns="items"
+            table="peep.inv",
+            condition=" user_id = $1 AND guild_id = $2 ",
+            columns="items,expired",
+            return_everything=row
         )
+        print("items",items)
         if items is None or len(items) == 0:
             raise DataDoesNotExists()
-
-        if not user:
-            raise NotFound()
         return items
 
     # add items to the shop
@@ -222,7 +221,7 @@ class Economy:
             cost,
             emoji,
             expired,
-            table="test.shop",
+            table="peep.shop",
             columns="items,cost,emoji,expired",
             values="$1,$2,$3,$4",
             on_Conflicts="""(items) DO
@@ -236,26 +235,28 @@ class Economy:
             user.id,
             user.guild.id,
             item['items'],
-            item['expired'] + datetime.datetime.now() if item['expired'] else None,
-            table="test.inv",
+            item['expired'] + datetime.datetime.utcnow() if item['expired'] else None,
+            table="peep.inv",
             columns="user_id,guild_id,items,expired",
             values="$1,$2,$3,$4")
 
-
     async def removeUserItems(self, user: discord.Member, itemname: str, forced: bool = True):
         items = await self.GetItemNamed(item=itemname)
+        UserHasItem = await self.getUserItem(itemname=itemname, user=user)
+        if not UserHasItem:
+            raise BadRequest("the item in user inventory already not exists")
 
         await self.database.Delete(
             itemname,
             user.id,
             user.guild.id,
-            table="test.inv",
+            table="peep.inv",
             condition="items = $1 AND user_id = $2 AND guild_id = $3"
         )
         if not forced:
-            await self.removeUserCoins(
+            await self.addUserCoins(
                 user=user,
-                coins=items[0]['cost']
+                coins=items['cost']
             )
         return items
 
@@ -265,15 +266,13 @@ class Economy:
         await self.GetItemNamed(item=itemname)
         await self.database.Delete(
             itemname.lower(),
-            table="test.shop",
+            table="peep.shop",
             condition="items = $1"
         )
 
     # buy a item from the shop
-    async def Buyitem(self, user: discord.Member, item_name: str, bot:pepebot):
-        items = await self.GetShopItems(Column="items,cost,emoji")
+    async def Buyitem(self, user: discord.Member, item_name: str, bot: pepebot):
         PointBooster = await self.isPoint_booster(item_name=item_name, guild_id=user.guild.id)
-
         User_Coin = await self.getUserCoins(user)
         User_inv = await self.getUserItem(user=user, itemname=item_name)
 
@@ -284,7 +283,6 @@ class Economy:
         try:
             rawItem = await self.GetItemNamed(
                 item_name.lower(), column='items,cost,emoji,expired')
-            print('raw item :' ,rawItem)
             cost = rawItem['cost']
             emoji = rawItem['emoji']
             expired = rawItem['expired']
@@ -292,14 +290,21 @@ class Economy:
             raise ItemNotFound()
         threshold = 0
         if User_Coin < cost:
-            raise UserHasNotEnoughCoins
+            raise NotEnoughCoins
         if PointBooster:
-            cost, expired, threshold = await self.AddBooster(user=user)
-        if expired:
-            await bot.taskrunner.ReloadTask()
+            expired, threshold = await self.AddBooster(user=user)
         else:
             await self.addItemtoInv(user=user, itemname=item_name)
 
+        if expired:
+            # gets current running task data from the class
+            current_data = bot.taskrunner.current_data
+            await bot.taskrunner.SetTasks()
+            # checks if current running task is older than this task
+            if current_data and current_data['expired'] > \
+                    expired + datetime.datetime.utcnow():
+                await bot.taskrunner.ReloadTask()
+        # remove coins from the user
         total = await self.removeUserCoins(user=user, coins=cost)
         return cost, emoji, total, expired, PointBooster, threshold
 
@@ -310,41 +315,58 @@ class Economy:
             user.id,
             user.guild.id,
             data['item_name'],
-            data['expired'] + datetime.datetime.now() if data['expired'] else None,
-            table="test.inv",
+            data['expired'] + datetime.datetime.utcnow() if data['expired'] else None,
+            table="peep.inv",
             columns="user_id,guild_id,items,expired",
             values="$1,$2,$3,$4")
-        return data['cost'], data['expired'], data['threshold']
+        return data['expired'], data['threshold']
 
-    async def GetBooster(self, guild_id: int):
+    async def cacheBooster(self, guild_id: int):
         data = await self.database.Select(
             guild_id,
-            table="test.booster",
-            columns="item_name,cost,expired",
-            condition="guild_id = $1"
+            table="peep.booster",
+            columns="item_name,expired,threshold",
+            condition="guild_id = $1",
+            row=True
         )
-        if not data:
-            raise NotFound('booster for this guild does not exists')
+        self.boosterCache[guild_id] = data
         return data
 
-    async def isPoint_booster(self, item_name: str, guild_id: int) -> bool:
-        data = await self.database.Select(
-            guild_id,
-            item_name,
-            table="test.booster",
-            columns='item_name',
-            condition='guild_id = $1 AND item_name = $2'
-        )
-        if data:
-            raise True
+    async def GetBooster(self, guild_id: int):
+        if guild_id in self.boosterCache:
+            data = self.boosterCache[guild_id]
         else:
-            return False
+            data = await self.cacheBooster(guild_id=guild_id)
+        return data
 
-    async def UpdateShopBooster(self, guild_id: int, name: str, cost: float,emoji:str):
+    # check if user has booster item
+    async def HasBooster(self, user: discord.Member):
+        Guild_id = user.guild.id
+        Booster = await self.GetBooster(Guild_id)
+        if Booster:
+            HasItem = await self.getUserItem(user=user, itemname=Booster["item_name"])
+            return HasItem is not None, Booster
+        return False, Booster
+
+    # check if item is a point booster
+    async def isPoint_booster(self, item_name: str, guild_id: int) -> bool:
+        booster = await self.GetBooster(guild_id=guild_id)
+        if not booster:
+            return False
+        if booster["item_name"] == item_name:
+            return True
+        return False
+
+    async def UpdateShopBooster(self, guild_id: int, cost: float, emoji: str):
+        """ insert/update booster from the database """
+        # get the boosters data from the list
         data = await self.GetBooster(guild_id=guild_id)
-        expired: typing.Optional[datetime.timedelta] = data['expired'] if data['expired'] else None
-        total_seconds = expired.total_seconds() if expired else None
-        await self.addShopItem(name=name, seconds=total_seconds, cost=cost, emoji=emoji)
+        if not data:
+            raise ItemNotFound
+        # get the expires time of the booster
+        expired: datetime.timedelta = data['expired']
+        total_seconds = expired.total_seconds()
+        await self.addShopItem(name=data["item_name"], seconds=int(total_seconds), cost=cost, emoji=emoji)
 
     async def Insert_Booster(self, name: str, guild_id: int, threshold: float, expired: datetime.timedelta):
         await self.database.Insert(
@@ -352,7 +374,7 @@ class Economy:
             name,
             threshold,
             expired,
-            table='test.booster',
+            table='peep.booster',
             columns='guild_id,item_name,threshold,expired',
             values='$1,$2,$3,$4',
             on_Conflicts=
@@ -360,3 +382,5 @@ class Economy:
             UPDATE SET item_name = $2,threshold=$3,expired=$4
             """
         )
+        await self.cacheBooster(guild_id=guild_id)
+
