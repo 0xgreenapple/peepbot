@@ -9,7 +9,7 @@ cffi==1.15.0
 chardet==4.0.0
 charset-normalizer==2.0.12
 decouple==0.0.7
-discord.py==2.0.0a4447+gd4cc8d30
+discord.py==2.0.1
 git+https://github.com/Rapptz/discord-ext-menus
 git+https://github.com/oliver-ni/discord-ext-menus-views
 fonttools==4.33.3
@@ -36,3 +36,4 @@ requests==2.27.1
 typing_extensions==4.1.1
 urllib3==1.26.9
 yarl==1.7.2
+aioredis~=2.0.1
