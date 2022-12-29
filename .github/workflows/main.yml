@@ -57,4 +57,4 @@ jobs:
           pip install -r requirements.txt
       - name: Start The bot
         run: |
-          python3.10 /home/ec2-user/testbot/runner.py
+          python3.10 runner.py
