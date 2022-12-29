@@ -30,3 +30,31 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           source: ./*
           target: /home/ec2-user/testbot
+      - name: Install virtualenv and activate
+        run: |
+          python3.10 -m pip install virtualenv
+          virtualenv env
+          source env/bin/activate
+      - name: Set and export the bot environment variables
+        env:
+          BOT_TOKEN: ${{ secrets.BETATOKEN }}
+          DB_PASSWORD: ${{ secrets.DBPASSWORD }}
+          APPLICATION_ID: ${{ secrets.APPLICATION_ID }}
+          DN_NAME: ${{ secrets.DBNAME }}
+          DB_USER: ${{ secrets.DBUSER }}
+          IMAGEPASS: ${{ secrets.IMAGEPASS }}
+          IMAGEUSER: ${{ secrets.IMAGEUSER }}
+        run: |
+          export BETATOKEN=$BOT_TOKEN
+          export DBPASSWORD=$DB_PASSWORD
+          export APPLICATION_ID=$APPLICATION_ID
+          export DNNAME=$DB_NAME
+          export DBUSER=$DB_USER
+          export IMAGEPASS=$IMAGEPASS
+          export IMAGEUSER=$IMAGEUSER
+      - name: Install requirements
+        run: |
+          pip install -r requirements.txt
+      - name: Start The bot
+        run: |
+          python3.10 /home/ec2-user/testbot/runner.py

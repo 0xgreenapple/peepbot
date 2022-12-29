@@ -64,18 +64,18 @@ class setup_memme(commands.Cog):
         if type == 'true':
             await self.bot.db.execute(
                 """ 
-                    INSERT INTO test.utils(guild_id1,active)
+                    INSERT INTO peep.utils(guild_id,active)
                     VALUES($1,$2)
-                    ON CONFLICT (guild_id1) DO
+                    ON CONFLICT (guild_id) DO
                     UPDATE SET active = $2
                 """, interaction.guild.id, True
             )
         elif type == 'false':
             await self.bot.db.execute(
                 """ 
-                    INSERT INTO test.utils(guild_id1,active)
+                    INSERT INTO peep.utils(guild_id,active)
                     VALUES($1,$2)
-                    ON CONFLICT (guild_id1) DO
+                    ON CONFLICT (guild_id) DO
                     UPDATE SET active = $2
                 """, interaction.guild.id, False
             )
@@ -99,9 +99,9 @@ class setup_memme(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         await self.bot.db.execute(
             """ 
-                INSERT INTO test.utils(guild_id1,role_id1)
+                INSERT INTO peep.utils(guild_id,role_id1)
                 VALUES($1,$2)
-                ON CONFLICT (guild_id1) DO
+                ON CONFLICT (guild_id) DO
                 UPDATE SET role_id1 = $2
             """, interaction.guild.id, role.id
         )
@@ -123,18 +123,18 @@ class setup_memme(commands.Cog):
         if type == 'true':
             await self.bot.db.execute(
                 """ 
-                INSERT INTO test.setup(guild_id1,listener)
+                INSERT INTO peep.setup(guild_id,listener)
                 VALUES($1,$2)
-                ON CONFLICT (guild_id1) DO
+                ON CONFLICT (guild_id) DO
                 UPDATE SET listener = $2
             """, interaction.guild.id, True
             )
         elif type == 'false':
             await self.bot.db.execute(
                 """ 
-                    INSERT INTO test.setup(guild_id1,listener)
+                    INSERT INTO peep.setup(guild_id,listener)
                     VALUES($1,$2)
-                    ON CONFLICT (guild_id1) DO
+                    ON CONFLICT (guild_id) DO
                     UPDATE SET listener = $2
                 """, interaction.guild.id, False
             )
@@ -155,9 +155,9 @@ class setup_memme(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         await self.bot.db.execute(
             """
-            INSERT INTO test.setup(guild_id1,vote)
+            INSERT INTO peep.setup(guild_id,vote)
             VALUES($1,$2) 
-            ON CONFLICT (guild_id1) DO
+            ON CONFLICT (guild_id) DO
             UPDATE SET vote = $2 ;
             """, interaction.guild.id, channel.id
         )
@@ -181,9 +181,9 @@ class setup_memme(commands.Cog):
 
         await self.bot.db.execute(
             """
-            INSERT INTO test.setup(guild_id1,vote_time)
+            INSERT INTO peep.setup(guild_id,vote_time)
             VALUES($1,$2)
-            ON CONFLICT (guild_id1) DO
+            ON CONFLICT (guild_id) DO
             UPDATE SET vote_time = $2 ;
             """, interaction.guild.id, voting_time
         )
@@ -209,9 +209,9 @@ class setup_memme(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         await self.bot.db.execute(
             """
-            INSERT INTO test.setup(guild_id1,customization_time)
+            INSERT INTO peep.setup(guild_id,customization_time)
             VALUES($1,$2)
-            ON CONFLICT (guild_id1) DO
+            ON CONFLICT (guild_id) DO
             UPDATE SET customization_time = $2 ;
             """, interaction.guild.id, customisation_time
         )
@@ -232,7 +232,7 @@ class setup_memme(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         channels = await self.bot.db.fetchval(
-            """ SELECT meme_channel FROM test.channels WHERE guild_id1=$1""",
+            """ SELECT meme_channel FROM peep.channels WHERE guild_id=$1""",
             interaction.guild.id
         )
 
@@ -262,9 +262,9 @@ class setup_memme(commands.Cog):
 
         await self.bot.db.execute(
             """
-            INSERT INTO test.channels(guild_id1,meme_channel)
+            INSERT INTO peep.channels(guild_id,meme_channel)
             VALUES($1,$2) 
-            ON CONFLICT (guild_id1) DO
+            ON CONFLICT (guild_id) DO
             UPDATE SET meme_channel = $2 ;
             """, interaction.guild.id, channels
         )
@@ -287,18 +287,18 @@ class setup_memme(commands.Cog):
         if type == 'true':
             await self.bot.db.execute(
                 """ 
-                INSERT INTO test.setup(guild_id1,thread_ls,thread_message)
+                INSERT INTO peep.setup(guild_id,thread_ls,thread_message)
                 VALUES($1,$2,$3)
-                ON CONFLICT (guild_id1) DO
+                ON CONFLICT (guild_id) DO
                 UPDATE SET thread_ls = $2,thread_message = $3
             """, interaction.guild.id, True, message if message else "make sure the meme is **original**"
             )
         elif type == 'false':
             await self.bot.db.execute(
                 """ 
-                    INSERT INTO test.setup(guild_id1,thread_ls)
+                    INSERT INTO peep.setup(guild_id,thread_ls)
                     VALUES($1,$2)
-                    ON CONFLICT (guild_id1) DO
+                    ON CONFLICT (guild_id) DO
                     UPDATE SET thread_ls = $2
                 """, interaction.guild.id, False
             )
@@ -319,7 +319,7 @@ class setup_memme(commands.Cog):
                              channel: discord.TextChannel, msg: str = None):
         await interaction.response.defer(ephemeral=True)
         channels = await self.bot.db.fetch(
-            """SELECT channel_id FROM  test.thread_channel WHERE guild_id = $1""",
+            """SELECT channel_id FROM  peep.thread_channel WHERE guild_id = $1""",
             interaction.guild.id
         )
         if mode == 'add':
@@ -333,7 +333,7 @@ class setup_memme(commands.Cog):
                             msg = None
                         await self.bot.db.execute(
                             """
-                            INSERT INTO test.thread_channel(guild_id, channel_id,msg)
+                            INSERT INTO peep.thread_channel(guild_id, channel_id,msg)
                             VALUES($1,$2,$3) 
                             ON CONFLICT (guild_id, channel_id) DO
                             UPDATE SET msg = $3
@@ -344,7 +344,7 @@ class setup_memme(commands.Cog):
 
             await self.bot.db.execute(
                 """
-                INSERT INTO test.thread_channel(guild_id, channel_id,msg)
+                INSERT INTO peep.thread_channel(guild_id, channel_id,msg)
                 VALUES($1,$2,$3) 
                 ON CONFLICT (guild_id, channel_id) DO
                 UPDATE SET msg = $3
@@ -363,7 +363,7 @@ class setup_memme(commands.Cog):
                 if i['channel_id'] == channel.id:
                     await self.bot.db.execute(
                         """
-                        DELETE FROM test.thread_channel
+                        DELETE FROM peep.thread_channel
                         WHERE guild_id = $1 AND channel_id = $2
                         """, interaction.guild.id, channel.id
                     )
@@ -387,9 +387,9 @@ class setup_memme(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         await self.bot.db.execute(
             """
-            INSERT INTO test.channels(guild_id1,shop_log)
+            INSERT INTO peep.channels(guild_id,shop_log)
             VALUES($1,$2) 
-            ON CONFLICT (guild_id1) DO
+            ON CONFLICT (guild_id) DO
             UPDATE SET shop_log = $2 ;
             """, interaction.guild.id, channel.id
         )
@@ -412,7 +412,7 @@ class setup_memme(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         channels = await self.bot.db.fetchval(
-            """ SELECT reaction_channel FROM test.channels WHERE guild_id1=$1""",
+            """ SELECT reaction_channel FROM peep.channels WHERE guild_id=$1""",
             interaction.guild.id
         )
 
@@ -442,9 +442,9 @@ class setup_memme(commands.Cog):
 
         await self.bot.db.execute(
             """
-            INSERT INTO test.channels(guild_id1,reaction_channel)
+            INSERT INTO peep.channels(guild_id,reaction_channel)
             VALUES($1,$2) 
-            ON CONFLICT (guild_id1) DO
+            ON CONFLICT (guild_id) DO
             UPDATE SET reaction_channel = $2 ;
             """, interaction.guild.id, channels
         )
@@ -464,18 +464,18 @@ class setup_memme(commands.Cog):
         if type == 'true':
             await self.bot.db.execute(
                 """ 
-                INSERT INTO test.setup(guild_id1,reaction_ls)
+                INSERT INTO peep.setup(guild_id,reaction_ls)
                 VALUES($1,$2)
-                ON CONFLICT (guild_id1) DO
+                ON CONFLICT (guild_id) DO
                 UPDATE SET reaction_ls = $2
             """, interaction.guild.id, True
             )
         elif type == 'false':
             await self.bot.db.execute(
                 """ 
-                    INSERT INTO test.setup(guild_id1,reaction_ls)
+                    INSERT INTO peep.setup(guild_id,reaction_ls)
                     VALUES($1,$2)
-                    ON CONFLICT (guild_id1) DO
+                    ON CONFLICT (guild_id) DO
                     UPDATE SET reaction_ls = $2
                 """, interaction.guild.id, False
             )
@@ -500,9 +500,9 @@ class setup_memme(commands.Cog):
 
         await self.bot.db.execute(
             """
-            INSERT INTO test.likes(guild_id1,channel,likes)
+            INSERT INTO peep.likes(guild_id,channel,likes)
             VALUES($1,$2,$3) 
-            ON CONFLICT (guild_id1,channel) DO
+            ON CONFLICT (guild_id,channel) DO
             UPDATE SET likes = $3;
             """, interaction.guild.id, channel.id, like
         )
@@ -527,7 +527,7 @@ class setup_memme(commands.Cog):
         channels = await self.bot.db.fetch(
             """
             SELECT gallery_l1,gallery_l2,gallery_l3,gallery_l4,gallery_l5,gallery_l6
-            FROM test.channels WHERE guild_id1= $1;
+            FROM peep.channels WHERE guild_id= $1;
             """, interaction.guild.id
         )
 
@@ -596,9 +596,9 @@ class setup_memme(commands.Cog):
 
         await self.bot.db.execute(
             """
-            INSERT INTO test.channels(guild_id1,gallery_l1,gallery_l2,gallery_l3,gallery_l4,gallery_l5,gallery_l6)
+            INSERT INTO peep.channels(guild_id,gallery_l1,gallery_l2,gallery_l3,gallery_l4,gallery_l5,gallery_l6)
             VALUES($1,$2,$3,$4,$5,$6,$7) 
-            ON CONFLICT (guild_id1) DO
+            ON CONFLICT (guild_id) DO
             UPDATE SET gallery_l1 = $2,gallery_l2 = $3,gallery_l3 = $4,
             gallery_l4 = $5,gallery_l5 = $6,gallery_l6 = $7;
             """, interaction.guild.id, newchannels[0], newchannels[1], newchannels[2], newchannels[3], newchannels[4],
@@ -649,7 +649,7 @@ class setup_memme(commands.Cog):
         channels = await self.bot.db.fetch(
             """
             SELECT gallery_l1,gallery_l2,gallery_l3,gallery_l4,gallery_l5,gallery_l6
-            FROM test.channels WHERE guild_id1= $1;
+            FROM peep.channels WHERE guild_id= $1;
             """, interaction.guild.id
         )
 
@@ -667,9 +667,9 @@ class setup_memme(commands.Cog):
         if gallery_lvl1:
             await self.bot.db.execute(
                 """
-                INSERT INTO test.channels(guild_id1,gallery_l1)
+                INSERT INTO peep.channels(guild_id,gallery_l1)
                 VALUES($1,$2) 
-                ON CONFLICT (guild_id1) DO
+                ON CONFLICT (guild_id) DO
                 UPDATE SET gallery_l1 = $2;
                 """, interaction.guild.id, gallery_lvl1.id
             )
@@ -681,9 +681,9 @@ class setup_memme(commands.Cog):
 
             await self.bot.db.execute(
                 """
-                INSERT INTO test.channels(guild_id1,gallery_l2)
+                INSERT INTO peep.channels(guild_id,gallery_l2)
                 VALUES($1,$2) 
-                ON CONFLICT (guild_id1) DO
+                ON CONFLICT (guild_id) DO
                 UPDATE SET gallery_l2 = $2;
                 """, interaction.guild.id, gallery_lvl2.id
             )
@@ -694,9 +694,9 @@ class setup_memme(commands.Cog):
                 return
             await self.bot.db.execute(
                 """
-                INSERT INTO test.channels(guild_id1,gallery_l3)
+                INSERT INTO peep.channels(guild_id,gallery_l3)
                 VALUES($1,$2) 
-                ON CONFLICT (guild_id1) DO
+                ON CONFLICT (guild_id) DO
                 UPDATE SET gallery_l3 = $2;
                 """, interaction.guild.id, gallery_lvl3.id
             )
@@ -707,9 +707,9 @@ class setup_memme(commands.Cog):
                 return
             await self.bot.db.execute(
                 """
-                INSERT INTO test.channels(guild_id1,gallery_l4)
+                INSERT INTO peep.channels(guild_id,gallery_l4)
                 VALUES($1,$2) 
-                ON CONFLICT (guild_id1) DO
+                ON CONFLICT (guild_id) DO
                 UPDATE SET gallery_l4 = $2;
                 """, interaction.guild.id, gallery_lvl4.id
             )
@@ -720,9 +720,9 @@ class setup_memme(commands.Cog):
                 return
             await self.bot.db.execute(
                 """
-                INSERT INTO test.channels(guild_id1,gallery_l5)
+                INSERT INTO peep.channels(guild_id,gallery_l5)
                 VALUES($1,$2) 
-                ON CONFLICT (guild_id1) DO
+                ON CONFLICT (guild_id) DO
                 UPDATE SET gallery_l1 = $5;
                 """, interaction.guild.id, gallery_lvl5.id
             )
@@ -733,9 +733,9 @@ class setup_memme(commands.Cog):
                 return
             await self.bot.db.execute(
                 """
-                INSERT INTO test.channels(guild_id1,gallery_l6)
+                INSERT INTO peep.channels(guild_id,gallery_l6)
                 VALUES($1,$2) 
-                ON CONFLICT (guild_id1) DO
+                ON CONFLICT (guild_id) DO
                 UPDATE SET gallery_l6 = $2;
                 """, interaction.guild.id, gallery_lvl6.id
             )
@@ -743,7 +743,7 @@ class setup_memme(commands.Cog):
         channels = await self.bot.db.fetch(
             """
             SELECT gallery_l1,gallery_l2,gallery_l3,gallery_l4,gallery_l5,gallery_l6
-            FROM test.channels WHERE guild_id1= $1;
+            FROM peep.channels WHERE guild_id= $1;
             """, interaction.guild.id
         )
         print('channels two', channels)
@@ -775,9 +775,9 @@ class setup_memme(commands.Cog):
     async def role_add_meme_manager(self, interaction: discord.Interaction, role: discord.Role):
         await self.bot.db.execute(
             """
-            INSERT INTO test.setup(guild_id1,mememanager_role)
+            INSERT INTO peep.setup(guild_id,mememanager_role)
             VALUES ($1,$2)
-            ON CONFLICT(guild_id1) DO 
+            ON CONFLICT(guild_id) DO 
             UPDATE SET mememanager_role = $2
             """, interaction.guild.id, role.id
         )
@@ -791,18 +791,18 @@ class setup_memme(commands.Cog):
         if type == 'true':
             await self.bot.db.execute(
                 """ 
-                INSERT INTO test.setup(guild_id1,rewards)
+                INSERT INTO peep.setup(guild_id,rewards)
                 VALUES($1,$2)
-                ON CONFLICT (guild_id1) DO
+                ON CONFLICT (guild_id) DO
                 UPDATE SET rewards = $2
             """, interaction.guild.id, True
             )
         elif type == 'false':
             await self.bot.db.execute(
                 """ 
-                    INSERT INTO test.setup(guild_id1,rewards)
+                    INSERT INTO peep.setup(guild_id,rewards)
                     VALUES($1,$2)
-                    ON CONFLICT (guild_id1) DO
+                    ON CONFLICT (guild_id) DO
                     UPDATE SET rewards = $2
                 """, interaction.guild.id, False
             )
@@ -842,7 +842,7 @@ class setup_memme(commands.Cog):
         channels = await self.bot.db.fetch(
             """
             SELECT gallery_l1,gallery_l2,gallery_l3,gallery_l4,gallery_l5,gallery_l6
-            FROM test.channels WHERE guild_id1= $1;
+            FROM peep.channels WHERE guild_id= $1;
             """, interaction.guild.id
         )
 
@@ -919,16 +919,16 @@ class setup_memme(commands.Cog):
         role_3 = role_3.id if role_3 else None
         await self.bot.db.execute(
             """
-            INSERT INTO test.rewards(guild_id1,channel_id1,limit_1,limit_2,limit_3,role_1,role_2,role_3)
+            INSERT INTO peep.rewards(guild_id,channel_id1,limit_1,limit_2,limit_3,role_1,role_2,role_3)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-            ON CONFLICT (guild_id1,channel_id1 )DO
+            ON CONFLICT (guild_id,channel_id1 )DO
             UPDATE SET limit_1 = $3 , limit_2 = $4, limit_3 = $5,role_1=$6,role_2=$7,role_3 = $8
             """, interaction.guild.id, channelnew, limit_1, limit_2, limit_3, role_1, role_2, role_3
         )
         a = await self.bot.db.fetch(
             """
-            SELECT * FROM test.rewards 
-            WHERE guild_id1=$1 AND channel_id1 = $2
+            SELECT * FROM peep.rewards 
+            WHERE guild_id=$1 AND channel_id1 = $2
             """, interaction.guild.id, channelnew
         )
         embed = discord.Embed(title='``role reward``',

@@ -41,7 +41,7 @@ class Events:
         """ initialize the tasks
         """
         pass
-
+ 
     def LoadTasks(self) -> asyncio.Task:
         """
         :return: asyncio.Task
@@ -106,7 +106,7 @@ class CheckEconomyItems(Events):
         """ Return the data"""
         data = await self.database.Select(
             timedelta(days=40),
-            table="test.inv",
+            table="peep.inv",
             columns="*",
             condition="expired < (CURRENT_DATE + $1::interval)",
             row=True,
@@ -134,11 +134,14 @@ class CheckEconomyItems(Events):
         await self._DeleteColumn(data)
 
     async def _DeleteColumn(self, data):
-        await self.database.Delete(
-            data['items'],
-            table='test.inv',
-            condition='items = $1'
-        )
+        try:
+            await self.database.Delete(
+                data['items'],
+                table='peep.inv',
+                condition='items = $1'
+            )
+        except Exception as e:
+            _log.info(e)
 
     async def ReloadTask(self):
         """ reinitialize the tasks"""
@@ -148,4 +151,3 @@ class CheckEconomyItems(Events):
     async def SetTasks(self):
         """ resume waiting tasks """
         self._next_data.set()
-

@@ -67,25 +67,24 @@ class pepebot(commands.Bot):
         )
 
         # variables
-        self.spam_count = Counter()
-        self.taskrunner: Optional[CheckEconomyItems] = None
         self.version = "0.0.1a"
-        self.owner_id = 888058231094665266
         self.message_prefix_s = "peep bot"
-        self.bot_user_agent = "peep (Discord Bot)"
-        self.logger: typing.Optional[logger] = None
         self.emoji = emojis()
+        self.colors = Colour()
+        self.spam_count = Counter()
+        self._app_info: Optional[discord.AppInfo] = None
+        self.taskrunner: Optional[CheckEconomyItems] = None
+        self.owner_id = 888058231094665266
+        self.logger: typing.Optional[logger] = None
         self.online_time = datetime.datetime.now(datetime.timezone.utc)
         self.spam_cooldown = commands.CooldownMapping.from_cooldown(
             5.0, 6.0, commands.BucketType.user)
         self.user_agent = (
-            "peep "
+            "peep (Discord Bot: {self.version})/ discord.gg/memesaurus"
             f"Python/{python_version()} "
             f"aiohttp/{aiohttp.__version__}"
             f"discord.py/{discord.__version__}"
         )
-        self.colors = Colour()
-
         # database variables
         self.db = self.database = self.database_connection_pool = None
         self.Database: Optional[database] = None
@@ -120,9 +119,10 @@ class pepebot(commands.Bot):
             Password=password,
             Host=host,
         )
-        self.Database.startup_task = self.initialize_database
         await self.Database.initialize()
-        self.db = self.database = self.database_connection_pool = self.Database.db
+        self.db = self.database = self.database_connection_pool = self.Database.database
+        await self.initialize_database()
+
         self.console_log("database setup done")
         # bot startup task
         self.loop.create_task(
@@ -147,10 +147,13 @@ class pepebot(commands.Bot):
         await self.tree.sync()
 
     async def on_ready(self):
-        """ Do startup task when bot successfully connects to database"""
+        """ Do startup task when bot successfully connects to database """
+        
         self.console_log(f"is shard rate limited? :{self.is_ws_ratelimited()}")
+        # add uptime to the bot
         if not hasattr(self, 'uptime'):
             self.startTime = time.time()
+        # set self.ready to true and sent the console message 
         if not self.ready:
             self.ready = True
             self.console_log(f"bot is logged as {self.user}")
@@ -159,73 +162,76 @@ class pepebot(commands.Bot):
 
     async def startup_tasks(self):
         """ startup tasks """
+        self.taskrunner = CheckEconomyItems(self)
+
         await self.wait_until_ready()
         # starts bot status loop
         await self.change_status.start()
         # initialize database event manager
-        self.taskrunner = CheckEconomyItems(self)
 
     # Setup every tables :)
     async def initialize_database(self):
-        await self.Database.CreateSchema(schema_name="test")
+
         # database for duel commands
         await self.Database.CreateTable(
-            table_name="test.duel", columns=
+            table_name="peep.duel", columns=
             """
-            user_id1      BIGINT NOT NULL,
-            user_id2      BIGINT NOT NULL,
-            user_ready    boolean DEFAULT FALSE,
-            member_ready  boolean DEFAULT FALSE,
-            message_id    BIGINT NOT NULL,
-            PRIMARY KEY	  (message_id),
-            r_user_ready       boolean DEFAULT FALSE,
+            user_1            BIGINT NOT NULL,
+            user_2            BIGINT NOT NULL,
+            is_user_ready          boolean DEFAULT FALSE,
+            is_member_ready        boolean DEFAULT FALSE,
+            message_id          BIGINT NOT NULL,
+            PRIMARY KEY	        (message_id),
+            r_user_ready        boolean DEFAULT FALSE,
             r_member_ready      boolean DEFAULT FALSE,
-            img2_id       BIGINT,
-            meme_id       TEXT
+            img2_id             BIGINT,
+            meme_id             TEXT
             """
         )
+
         # leaderboard for memes based on likes
         await self.Database.CreateTable(
-            table_name="test.leaderboard",
+            table_name="peep.leaderboard",
             columns=
             """
-            guild_id1      BIGINT NOT NULL,
-            channel        BIGINT,
-            likes          BIGINT DEFAULT 5,
-            PRIMARY KEY (guild_id1,channel)
+            user_id           BIGINT NOT NULL,
+            channel_id        BIGINT,
+            likes          INT DEFAULT 0,
+            PRIMARY KEY (user_id,channel_id)
             """
         )
 
         # store all the likes
         await self.Database.CreateTable(
-            table_name="test.likes",
+            table_name="peep.likes",
             columns=
             """
-            guild_id1   BIGINT NOT NULL,
+            guild_id   BIGINT NOT NULL,
             channel     BIGINT,
             likes       BIGINT DEFAULT 5,
-            PRIMARY KEY (guild_id1,channel)
+            PRIMARY KEY (guild_id,channel)
             """
         )
 
         # basically its store the role ids to be used later
         await self.Database.CreateTable(
-            table_name="test.utils",
+            table_name="peep.utils",
             columns=
             """
-            guild_id1     BIGINT NOT NULL,
-            role_id1      BIGINT,
-            active        BOOLEAN DEFAULT FALSE,
-            PRIMARY KEY   (guild_id1)
+            guild_id       BIGINT NOT NULL,
+            role_id        BIGINT,
+            active         BOOLEAN DEFAULT FALSE,
+            PRIMARY KEY    (guild_id)
             """
         )
+
         # setup rewards roles
         await self.Database.CreateTable(
-            table_name="test.rewards",
+            table_name="peep.rewards",
             columns=
             """
-            guild_id1     BIGINT NOT NULL,
-            channel_id1      BIGINT NOT NULL,
+            guild_id     BIGINT NOT NULL,
+            channel_id   BIGINT NOT NULL,
             limit_1      BIGINT,
             limit_2      BIGINT,
             limit_3      BIGINT,
@@ -235,30 +241,32 @@ class pepebot(commands.Bot):
             PRIMARY KEY (guild_id1,channel_id1)
             """
         )
+
         # store the settings stats
         await self.Database.CreateTable(
-            table_name="test.setup",
+            table_name="peep.setup",
             columns=
             """
-            guild_id1     BIGINT NOT NULL,
+            guild_id           BIGINT NOT NULL,
             vote               BIGINT,
             reaction_ls        BOOLEAN DEFAULT FALSE,
             thread_ls          BOOLEAN DEFAULT FALSE,
             listener           BOOLEAN DEFAULT FALSE,
             thread_message     TEXT,
-            rewards            BOOLEAN DEFAULT FALSE,      
+            rewards            BOOLEAN DEFAULT FALSE,
             vote_time          BIGINT DEFAULT 60,
             mememanager_role   BIGINT,
             customization_time BIGINT DEFAULT 5,
-            PRIMARY KEY (guild_id1)
+            PRIMARY KEY        (guild_id)
             """
         )
+
         # store gallery channels ids
         await self.Database.CreateTable(
-            table_name="test.channels",
+            table_name="peep.channels",
             columns=
             """
-            guild_id1         BIGINT NOT NULL,
+            guild_id         BIGINT NOT NULL,
             gallery_l1        BIGINT,
             gallery_l2        BIGINT,
             gallery_l3        BIGINT,
@@ -270,24 +278,26 @@ class pepebot(commands.Bot):
             thread_channel    BIGINT[],
             reaction_channel  BIGINT[],
             shop_log          BIGINT,
-            PRIMARY KEY (guild_id1)
+            PRIMARY KEY (guild_id)
             """
         )
+
         # I forgot what it does
         await self.Database.CreateTable(
-            table_name="test.msg",
+            table_name="peep.msg",
             columns=
             """
-            guild_id1         BIGINT NOT NULL,
-            channel_id        BIGINT NOT NULL,
-            user_id           BIGINT NOT NULL,
+            guild_id           BIGINT NOT NULL,
+            channel_id         BIGINT NOT NULL,
+            user_id            BIGINT NOT NULL,
             limit1             BIGINT DEFAULT 0,
-            PRIMARY KEY (guild_id1,channel_id,user_id)
+            PRIMARY KEY (guild_id,channel_id,user_id)
             """
         )
+
         # store thread listener channel ids
         await self.Database.CreateTable(
-            table_name="test.thread_channel",
+            table_name="peep.thread_channel",
             columns=
             """
             guild_id          BIGINT NOT NULL,
@@ -298,7 +308,7 @@ class pepebot(commands.Bot):
         )
         # store economy related stuffs, most valuable one
         await self.Database.CreateTable(
-            table_name="test.economy",
+            table_name="peep.economy",
             columns=
             """
             guild_id          BIGINT NOT NULL,
@@ -309,7 +319,7 @@ class pepebot(commands.Bot):
         )
         # manage shop items
         await self.Database.CreateTable(
-            table_name="test.shop",
+            table_name="peep.shop",
             columns=
             """
             items              TEXT,
@@ -320,7 +330,7 @@ class pepebot(commands.Bot):
         )
         # user Inventory
         await self.Database.CreateTable(
-            table_name="test.inv",
+            table_name="peep.inv",
             columns=
             """
             guild_id           BIGINT,
@@ -328,44 +338,28 @@ class pepebot(commands.Bot):
             items              TEXT,
             PRIMARY KEY		   (items),
             expired            TIMESTAMP,
-            FOREIGN KEY (items) REFERENCES test.shop(items) 
+            FOREIGN KEY (items) REFERENCES peep.shop(items)
             ON DELETE CASCADE ON UPDATE CASCADE
             """
         )
-        # await self.Database.CreateTable(
-        #     table_name="test.booster",
-        #     columns=
-        #     """
-        #     guild_id      BIGINT,
-        #     item_name     TEXT,
-        #     threshold     FLOAT,
-        #     expired       INTERVAL DEFAULT NULL,
-        #     PRIMARY KEY	  (guild_id)
-        #     """
-        # )
-        #
-        # await self.Database.delete_column(table='test.shop', column='expired')
-        # await self.Database.AddColumn(
-        #     table='test.shop',
-        #     column='expired',
-        #     datatype='INTERVAL DEFAULT NULL'
-        # )
-        # await self.Database.AddColumn(
-        #     table="test.shop",
-        #     column="expired",
-        #     datatype="TIMESTAMP DEFAULT NULL",
-        #     check_if_exists=True
-        # )
-        # await self.Database.AddColumn(
-        #     table="test.inv",
-        #     column="expired",
-        #     datatype="TIMESTAMP DEFAULT NULL",
-        #     check_if_exists=True
-        # )
+        await self.Database.CreateTable(
+            table_name="peep.booster",
+            columns=
+            """
+            guild_id      BIGINT,
+            item_name     TEXT,
+            threshold     FLOAT,
+            expired       INTERVAL DEFAULT NULL,
+            PRIMARY KEY	  (guild_id)
+            """
+        )
 
     def console_log(self, message):
         """prints to console"""
-        print(f"[{datetime.datetime.now().strftime(r'%D %I:%M %p')}] > {self.user} > {message}")
+        if self.logger:
+            self.logger.write(f"{self.user} > {message}")
+        else:
+            print(f"[{datetime.datetime.now().strftime(r'%D %I:%M %p')}] > {self.user} > {message}")
 
     @staticmethod
     async def get_command_prefix(bot, message: discord.Message):
@@ -440,7 +434,8 @@ class pepebot(commands.Bot):
         ctx = await super().get_context(message, cls=cls)
         return ctx
 
-    async def on_message(self, message):
+    async def on_message(self, message: discord.Message):
+        message.content.startswith("$")
         """ called when the message is received process the commands"""
         process = psutil.Process(os.getpid())
         print(process.memory_info().rss / 1024 ** 2)

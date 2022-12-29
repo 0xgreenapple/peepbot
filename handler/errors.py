@@ -8,7 +8,7 @@ class EconomyException(Exception):
     pass
 
 
-class UserHasNotEnoughCoins(EconomyException):
+class NotEnoughCoins(EconomyException):
     def __init__(self, message: str = " user already has no coins"):
         self.message = message
         super().__init__(message)
@@ -21,10 +21,11 @@ class NotEnoughMembers(EconomyException):
 
 
 class DataDoesNotExists(EconomyException):
-    def __init__(self,Member:discord.Member = None, message: str = " the data for this user does not exists"):
+    def __init__(self, Member: discord.Member = None, message: str = " the data for this user does not exists"):
         self.Member = Member
         self.message = f" the data for {self.Member} doesnt exists" if self.Member else message
         super().__init__(self.message)
+
 
 class NotFound(EconomyException):
     def __init__(self, data: str = None, message: str = "the data does not exist"):
@@ -44,4 +45,23 @@ class BadRequest(EconomyException):
     def __init__(self, message: str = "there is something wrong about your request"):
         self.message = message
         super().__init__(self.message)
+
+
+class UserException(Exception):
+    """base class for user related errors
+    """
+    pass
+
+
+class RoleNotFound(UserException):
+    """raise error if role not found in the user"""
+    def __init__(self,message: str = "missing required role"):
+        self.message: str = message
+        super().__init__(self.message)
+
+
+
+
+
+
 

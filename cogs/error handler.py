@@ -16,6 +16,7 @@ from discord import app_commands
 
 from handler import utils
 from handler.Context import Context
+from handler.errors import RoleNotFound
 from pepebot import pepebot
 
 log = logging.getLogger(__name__)
@@ -24,8 +25,6 @@ log = logging.getLogger(__name__)
 class error_handler(commands.Cog):
     def __init__(self, bot: pepebot) -> None:
         self.bot = bot
-
-
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx: Context, error):
@@ -36,6 +35,8 @@ class error_handler(commands.Cog):
         if isinstance(error, commands.NotOwner):
             return
 
+        elif isinstance(error, RoleNotFound):
+            return
         elif isinstance(error, (commands.CommandNotFound, commands.DisabledCommand)):
             return
 
@@ -133,7 +134,7 @@ class error_handler(commands.Cog):
                 log.info(
                     f"Missing Permissions for {ctx.command.qualified_name} in #{ctx.channel.name} in {ctx.guild.name} code : {error.original.code}")
                 return
-            elif isinstance(error.original,discord.Forbidden):
+            elif isinstance(error.original, discord.Forbidden):
                 log.info(f'MISSION PERMISSION IN [guild: {ctx.guild.name}] ID:{ctx.guild.name} user:{ctx.author.name }')
 
             # Discord Server Error
@@ -165,7 +166,7 @@ class error_handler(commands.Cog):
             return await utils.error_embed(bot=self.bot, Interaction=interaction, error_name=error_name,
                                            error_dis=error_dis)
 
-        elif isinstance(error, errors.CannotsendEmbeds):
+        elif isinstance(error, error.CannotsendEmbeds):
             return await interaction.response.send_message(
                 f'``{interaction.command.name}`` command cant be executed. to run the command give me following '
                 f'permissions!\n '

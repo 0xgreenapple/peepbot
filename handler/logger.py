@@ -127,5 +127,5 @@ class logger:
             self.log.removeHandler(handler)
 
     # write to the console
-    def write(self, *, message):
+    def write(self, *, message: str):
         self.console.write(message)

@@ -68,13 +68,12 @@ class duel(commands.Cog):
     async def leaderboard(self, ctx: Context):
 
         msg = await self.bot.db.fetch(
-            """ SELECT user_id1,  likes 
-            from test.leaderboard WHERE guild_id1 = $1
+            """ SELECT user_id, likes 
+            from peep.leaderboard WHERE guild_id = $1
             order by likes desc
             fetch first 10 rows only
             """, ctx.guild.id
         )
-
 
         if len(msg) == 0:
             await ctx.error_embed(description='the leaderboard for this guild is currently not available')
@@ -83,8 +82,8 @@ class duel(commands.Cog):
         users = []
         j = 1
         for i in msg:
-            user = ctx.guild.get_member(i['user_id1'])
-            if not user is None:
+            user = ctx.guild.get_member(i['user_id'])
+            if user:
                 users.append([user, i['likes']])
 
         if users:
@@ -125,8 +124,8 @@ class duel(commands.Cog):
         member1 = member if member else ctx.author
 
         msg = await self.bot.db.fetch(
-            """ SELECT user_id1,  likes 
-            from test.leaderboard WHERE guild_id1 = $1
+            """ SELECT user_id, likes 
+            from peep.leaderboard WHERE guild_id = $1
             order by likes desc
             fetch first 10 rows only
             """, ctx.guild.id
@@ -134,8 +133,8 @@ class duel(commands.Cog):
 
         stats = await self.bot.db.fetchrow(
             """
-            SELECT likes, user_id1 FROM test.leaderboard
-            WHERE user_id1=$1 AND guild_id1=$2
+            SELECT likes, user_id FROM peep.leaderboard
+            WHERE user_id=$1 AND guild_id=$2
             """, member1.id, ctx.guild.id
         )
 
@@ -157,8 +156,8 @@ class duel(commands.Cog):
         print(msg)
         print(stats)
         for i in msg:
-            if stats['user_id1'] == i['user_id1']:
-                user_id = stats['user_id1']
+            if stats['user_id'] == i['user_id']:
+                user_id = stats['user_id']
                 number = j
                 likes = i['likes']
                 break

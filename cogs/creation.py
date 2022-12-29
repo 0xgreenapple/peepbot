@@ -11,7 +11,7 @@ import discord
 from PIL import Image
 from discord.ext import commands
 from discord.ext.commands import BucketType, cooldown
-
+import aiohttp
 from handler.Context import Context
 from handler.pagination import SimplePages
 from handler.view import duel_button
@@ -104,13 +104,13 @@ async def get_attachments(ctx: Context):
                 break
 
 
+
 async def get_image(header: str, url: str, bot: pepebot = None):
     atachment_url = url
 
-    session: aiohttp.ClientSession = bot.aiohttp_session
+    session = aiohttp.ClientSession()
     base_url = f"https://api.jeyy.xyz/image/{header}?image_url={atachment_url}"
     res = await session.get(url=base_url)
-
     return res
 
 

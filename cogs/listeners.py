@@ -2,6 +2,7 @@ import asyncio
 import io
 import os
 import random
+import typing
 from datetime import datetime, timedelta
 from io import BytesIO
 import re
@@ -10,11 +11,11 @@ import discord
 from discord import errors
 from discord.ext import commands
 from discord.ext.commands import BucketType, cooldown
-
+from typing import TYPE_CHECKING
+from pepebot import pepebot
 from handler.Context import Context
 from handler.pagination import SimplePages
 from handler.view import duel_button, thread_channel
-from pepebot import pepebot
 import logging
 
 
@@ -36,9 +37,9 @@ async def handle_roles(bot: pepebot, message: discord.Message, reward_channel: i
 
             await bot.db.execute(
                 """
-                INSERT INTO test.msg(guild_id1,channel_id,user_id,limit1)
+                INSERT INTO peep.msg(guild_id,channel_id,user_id,limit1)
                 VAlUES($1,$2,$3,$4)
-                ON CONFLICT(guild_id1,channel_id,user_id) DO
+                ON CONFLICT(guild_id,channel_id,user_id) DO
                 UPDATE SET limit1 =  COALESCE(msg.limit1, 0) + $4 ;
                 """, message.guild.id, message.channel.id, message.author.id, 1
             )
@@ -73,7 +74,6 @@ async def handle_roles(bot: pepebot, message: discord.Message, reward_channel: i
                 if limits[2] and user_limit >= limits[2]:
                     print('adding2')
 
-
                     if not user_role3:
                         if roles[2]:
                             role3 = message.guild.get_role(roles[2])
@@ -83,14 +83,14 @@ async def handle_roles(bot: pepebot, message: discord.Message, reward_channel: i
 
 async def handle_gallery(bot: pepebot, message: discord.Message, announcement_id: int, _is_gallery=False):
     vote_time = await bot.db.fetchval(
-        """SELECT vote_time FROM test.setup
-        WHERE guild_id1=$1""", message.guild.id
+        """SELECT vote_time FROM peep.setup
+        WHERE guild_id=$1""", message.guild.id
     )
     vote_time = vote_time if vote_time else 18
 
     reaction_count1 = await bot.db.fetchval(
-        """SELECT likes FROM test.likes 
-        WHERE guild_id1=$1 AND channel = $2""", message.guild.id, message.channel.id
+        """SELECT likes FROM peep.likes 
+        WHERE guild_id=$1 AND channel = $2""", message.guild.id, message.channel.id
     )
     reaction_count1 = reaction_count1 if reaction_count1 else 2
 
@@ -118,9 +118,9 @@ async def handle_gallery(bot: pepebot, message: discord.Message, announcement_id
                 break
         await bot.db.execute(
             """
-                    INSERT INTO test.leaderboard(user_id1,guild_id1,likes)
+                    INSERT INTO peep.leaderboard(user_id,guild_id,likes)
                     VALUES($1,$2,$3)
-                    ON CONFLICT (guild_id1,user_id1) DO
+                    ON CONFLICT (guild_id,user_id) DO
                     UPDATE SET likes = COALESCE(leaderboard.likes, 0) + $3 ;
                     """, message.author.id, message.guild.id, reaction_count
         )
@@ -157,9 +157,48 @@ async def handle_gallery(bot: pepebot, message: discord.Message, announcement_id
                                               filename=f'{bot.user.name}{fileext}'))
 
 
+async def GetAttachments(message: discord.Message, links: bool = False):
+    AllowedTypes = ("Image", "video")
+    attachments = message.attachments
+    embeds = message.embeds
+    if (not attachments or len(attachments) == 0) \
+            or (not embeds or len(embeds) == 0):
+        return
+    Resolved_Attachments = []
+    for image in attachments:
+        if image.content_type.startswith(AllowedTypes):
+            Resolved_Attachments.append(image)
+
+    if links:
+        for embed in embeds:
+            if embed.image:
+                Resolved_Attachments.append(embed.image)
+            elif embed.image:
+                Resolved_Attachments.append(embed.video)
+
+    return Resolved_Attachments
+
+
+async def AddLikes(bot: pepebot, user: discord.Member):
+    await bot.Database.Insert(
+        user.id,
+        user.guild.id,
+        table="peep.leaderboard",
+        columns="user_id,guild_id,likes",
+        values="$1,$2,$3",
+        on_Conflicts="(user_id,guild_id) DO UPDATE SET likes = COALESCE(leaderboard.likes, 0) + 1"
+    )
+
+
+async def HandleThreadEvents():
+    ...
+
+
 class listeners(commands.Cog):
     def __init__(self, bot: pepebot) -> None:
         self.bot = bot
+        self.MsgLikes = {}
+        self.Database = self.bot.Database
 
     @commands.Cog.listener('on_message')
     async def memes(self, message: discord.Message):
@@ -170,9 +209,9 @@ class listeners(commands.Cog):
         if message.author.bot:
             return
 
-        channel = await self.bot.db.fetchval("""SELECT meme_channel FROM test.channels WHERE guild_id1 =$1""",
+        channel = await self.bot.db.fetchval("""SELECT meme_channel FROM peep.channels WHERE guild_id =$1""",
                                              message.guild.id)
-        is_disabled = await self.bot.db.fetchval("""SELECT listener FROM test.setup WHERE guild_id1 =$1""",
+        is_disabled = await self.bot.db.fetchval("""SELECT listener FROM peep.setup WHERE guild_id =$1""",
                                                  message.guild.id)
         if not is_disabled:
             return
@@ -203,239 +242,97 @@ class listeners(commands.Cog):
 
     @commands.Cog.listener('on_message')
     async def thread_create(self, message: discord.Message):
-        # check if the message is normal
-        print('happening')
 
+        # check if the message is normal
         if message.type != discord.MessageType.default:
             return
-
         if message.author.bot:
             return
-        channel = await self.bot.db.fetchval(
-            """SELECT channel_id FROM test.thread_channel WHERE guild_id =$1 and channel_id = $2""",
-            message.guild.id, message.channel.id
-        )
-        is_enabled = await self.bot.db.fetchval(
-            """SELECT thread_ls FROM test.setup WHERE guild_id1 =$1""",
-            message.guild.id
-        )
-        print(channel)
 
+        Setup = await self.bot.Database.Select(
+            message.guild.id,
+            table="peep.setup",
+            columns="thread_ls, mememanager_role",
+            condition="guild_id=$1",
+            row=True
+        )
+        is_enabled = Setup["thread_ls"]
+        MemeManagerRole = Setup["mememanager_role"]
         if not is_enabled:
             return
-        if not channel:
+
+        Channel_settings = await self.bot.Database.Select(
+            message.guild.id,
+            message.channel.id,
+            table="peep.thread_channel",
+            columns="channel_id,msg",
+            condition="guild_id =$1 and channel_id = $2",
+            row=True
+        )
+
+        ThreadChannelID = Channel_settings["channel_id"]
+        MessageText = Channel_settings["msg"]
+
+        if not ThreadChannelID:
             return
-        print('has_attachment')
-        has_attachment = False
-        has_embed = False
 
-        if len(message.attachments):
-            has_attachment = True
-
-        elif len(message.embeds):
-            for embed in message.embeds:
-                if embed.type == 'image':
-                    has_embed = True
-                    break
-        else:
+        Attachment = await GetAttachments(message=message)
+        if not Attachment and len(Attachment) == 0:
             return
 
-        if has_attachment or has_embed:
-            thread = await message.channel.create_thread(
-                name=f"{message.author.name} ({message.created_at.microsecond})" if len(message.attachments)
-                else f"{message.author.name} ({message.created_at.microsecond})",
-                message=message, auto_archive_duration=1440)
-            msg = await self.bot.db.fetchval(
-                """
-                SELECT msg FROM test.thread_channel WHERE guild_id = $1 AND channel_id = $2
-                """, message.guild.id, message.channel.id
-            )
-            rolemention = await self.bot.db.fetchval(
-                """
-                SELECT mememanager_role FROM test.setup WHERE guild_id1 = $1
-                """, message.guild.id
-            )
-            rolemention =  message.guild.get_role(rolemention)
+        Name = None
 
-            rolemention = rolemention.mention if rolemention else message.author.mention
-            msg = msg if msg else f" {rolemention} Make Sure the meme is **original**"
-            view = thread_channel(user=message.author)
-            message = await thread.send(msg, view=view)
-            return message
+        thread = await message.channel.create_thread(
+            name=f"{message.author.name} ({message.created_at.microsecond})",
+            message=message, auto_archive_duration=60)
+
+        rolemention = message.guild.get_role(rolemention)
+
+        rolemention = rolemention.mention if rolemention else message.author.mention
+        msg = msg if msg else f" {rolemention} Make Sure the meme is **original**"
+        view = thread_channel(user=message.author)
+        message = await thread.send(msg, view=view)
+        return message
 
     @commands.Cog.listener('on_message')
     async def likes_handler(self, message: discord.Message):
-
         # return if system message
-        if message.type != discord.MessageType.default:
-            return
-        if message.author.bot and message.author.id != self.bot.user.id:
-            return
         if message.channel.type != discord.ChannelType.text:
             return
-
-        if message.author.id == self.bot.user.id:
-            m = message.content.replace('by', '').replace(' ', '').replace('<@', '').replace('>', '')
-            member1 = message.guild.get_member(int(m))
-            message.author = member1
-            print(message.author.name)
-
-        channel = await self.bot.db.fetchval(
-            """
-            SELECT reaction_channel FROM test.channels 
-            WHERE guild_id1 =$1
-            """, message.guild.id
-        )
-        is_disabled = await self.bot.db.fetchval(
-            """
-            SELECT reaction_ls 
-            FROM test.setup WHERE
-             guild_id1 =$1
-             """, message.guild.id
-        )
-
-        if not is_disabled:
+        if message.type != discord.MessageType.default:
+            return
+        if message.author.bot:
             return
 
-        channels = await self.bot.db.fetch(
-            """
-            SELECT gallery_l1,gallery_l2,gallery_l3,gallery_l4,
-            gallery_l5,gallery_l6
-            FROM test.channels WHERE guild_id1= $1;
-            """, message.guild.id
-        )
-        user_limit = await self.bot.db.fetchval(
-            """
-            SELECT limit1
-            FROM test.msg WHERE guild_id1= $1 and channel_id=$2 AND user_id = $3;
-            """, message.guild.id, message.channel.id, message.author.id
-        )
-        user_limit = user_limit if user_limit else 0
-
-        is_reward = await self.bot.db.fetchval(
-            """
-            SELECT rewards FROM test.setup WHERE guild_id1 =$1
-            """, message.guild.id
-        )
-        reward = await self.bot.db.fetch(
-            """
-            SELECT * FROM test.rewards 
-            WHERE guild_id1=$1 AND channel_id1 = $2
-            """, message.guild.id, message.channel.id
-        )
-
-
-        new_channels = [channels[0]['gallery_l1'],
-                        channels[0]['gallery_l2'],
-                        channels[0]['gallery_l3'],
-                        channels[0]['gallery_l4'],
-                        channels[0]['gallery_l5'],
-                        channels[0]['gallery_l6']]
-
-        limits = None
-        roles = None
-        reward_channel = None
-
-        if is_reward:
-            if reward or len(reward) != 0:
-                reward_channel = reward[0]['channel_id1']
-                limits = [reward[0]['limit_1'], reward[0]['limit_2'], reward[0]['limit_3']]
-                roles = [reward[0]['role_1'], reward[0]['role_2'], reward[0]['role_3']]
-
-        has_embed = False
-        has_attachment = False
-        if len(message.attachments):
-            has_attachment = True
-        elif len(message.embeds):
-            for embed in message.embeds:
-                if embed.type == 'image':
-                    has_embed = True
-                    break
-        else:
+        Attachments = await GetAttachments(message=message)
+        if not Attachments or len(Attachments) == 0:
             return
 
-        if not has_embed and not has_attachment:
+        Channel: typing.Optional[int] = None
+
+        if not Channel or message.channel.id != Channel:
             return
-        print(new_channels)
-        if message.channel.id in channel:
-            await message.add_reaction(self.bot.like)
-            await message.add_reaction(self.bot.dislike)
-            print('normal channel')
-            if not new_channels[0]:
-                return
-            announcement_id = new_channels[0]
-            await handle_roles(bot=self.bot,message=message,reward_channel=reward_channel,
-                               user_limit=user_limit,limits=limits,roles=roles)
 
-            await handle_gallery(bot=self.bot, message=message, announcement_id=announcement_id)
+        User = message.author
+        Guild = message.guild
+        await message.add_reaction(self.bot.emoji.like)
+        self.MsgLikes[message.id] = {"message": message, "likes": 0}
 
-        elif message.channel.id == new_channels[0]:
-            await message.add_reaction(self.bot.like)
-            await message.add_reaction(self.bot.dislike)
-            print('secondndnd',message.author.name)
-            print('im gallery lvl1')
-            print('limitsss',limits)
-            await handle_roles(bot=self.bot, message=message, reward_channel=reward_channel,
-                               user_limit=user_limit, limits=limits, roles=roles)
+    @commands.Cog.listener(name="on_reaction_add")
+    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
+        message = reaction.message
+        if user.bot:
+            return
+        if message.id not in self.MsgLikes:
+            return
+        if reaction.emoji != self.bot.emoji.like:
+            return
 
-            if not new_channels[1]:
-                return
-            announcement_id = new_channels[1]
-            await handle_gallery(bot=self.bot, message=message, announcement_id=announcement_id,
-                                 _is_gallery=True
-                                 )
-
-        elif message.channel.id == new_channels[1]:
-            await message.add_reaction(self.bot.like)
-            await message.add_reaction(self.bot.dislike)
-
-            await handle_roles(bot=self.bot, message=message, reward_channel=reward_channel,
-                               user_limit=user_limit, limits=limits, roles=roles)
-
-            print('im gallery lvl2')
-            if not new_channels[2]:
-                return
-            announcement_id = new_channels[2]
-            await handle_gallery(bot=self.bot, message=message, announcement_id=announcement_id,
-                                 _is_gallery=True)
-
-        elif message.channel.id == new_channels[2]:
-            await message.add_reaction(self.bot.like)
-            await message.add_reaction(self.bot.dislike)
-
-            await handle_roles(bot=self.bot, message=message, reward_channel=reward_channel,
-                               user_limit=user_limit, limits=limits, roles=roles)
-
-            if not new_channels[3]:
-                return
-            announcement_id = new_channels[3]
-            await handle_gallery(bot=self.bot, message=message, announcement_id=announcement_id,
-                                 _is_gallery=True)
-
-        elif message.channel.id == new_channels[3]:
-            await message.add_reaction(self.bot.like)
-            await message.add_reaction(self.bot.dislike)
-
-            await handle_roles(bot=self.bot, message=message, reward_channel=reward_channel,
-                               user_limit=user_limit, limits=limits, roles=roles)
-            if not new_channels[4]:
-                return
-            announcement_id = new_channels[4]
-            await handle_gallery(bot=self.bot, message=message, announcement_id=announcement_id,
-                                 _is_gallery=True)
-            print('galleryl 4')
-        elif message.channel.id == new_channels[4]:
-            await message.add_reaction(self.bot.like)
-            await message.add_reaction(self.bot.dislike)
-            await handle_roles(bot=self.bot, message=message, reward_channel=reward_channel,
-                               user_limit=user_limit, limits=limits, roles=roles)
-
-            if not new_channels[5]:
-                return
-            announcement_id = new_channels[5]
-            await handle_gallery(bot=self.bot, message=message, announcement_id=announcement_id,
-                                 _is_gallery=True)
-            print('galleryl 5')
+        member = message.guild.get_member(user.id)
+        self.MsgLikes[message.id]["likes"] = self.MsgLikes[message.id]["likes"] + 1
+        if True:
+            ...
+        self.bot.loop.create_task(AddLikes(bot=self.bot, user=member))
 
 
 async def setup(bot: pepebot) -> None:

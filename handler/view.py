@@ -3,7 +3,7 @@ import asyncio
 import io
 import random
 import shlex
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import aiohttp
 import discord
@@ -24,7 +24,7 @@ class duel_button(discord.ui.View):
                  message: discord.Message,
                  member: discord.Member,
                  user: discord.Member,
-                 bot: pepebot.pepebot
+                 bot: pepebot
                  ):
         super().__init__(timeout=10 * 60)
 
@@ -76,7 +76,7 @@ class duel_button(discord.ui.View):
                     break
 
             self.bot.loop.create_task(self.bot.db.execute(
-                """INSERT INTO test.duel(user_id1,user_id2,message_id,meme_id)
+                """INSERT INTO peep.duel(user_id1,user_id2,message_id,meme_id)
                 VALUES($1,$2,$3,$4)
                 """, self.user.id, self.member.id, self.message.id, memeid
             ))
@@ -119,8 +119,7 @@ class duel_button(discord.ui.View):
             )
             await self.interaction_message.edit(embed=embed, view=None)
             await self.message.edit(embed=embed1, content=None)
-
-
+        
         except:
             pass
 
@@ -206,7 +205,7 @@ class ready_button(discord.ui.View):
             if i['box_count'] == '2' or i['box_count'] == 2:
                 ids.append(i['id'])
 
-        memeid = await self.bot.db.fetchval(""" SELECT meme_id FROM test.duel WHERE message_id = $1
+        memeid = await self.bot.db.fetchval(""" SELECT meme_id FROM peep.duel WHERE message_id = $1
         """, self.message.id)
         memeid = memeid
 
@@ -292,11 +291,11 @@ class ready_button(discord.ui.View):
         second_user_submission = []
 
         announcement_id = await self.bot.db.fetchval(
-            """SELECT announcement FROM test.setup
+            """SELECT announcement FROM peep.setup
                 WHERE guild_id1 = $1""", interaction.guild.id
         )
         vote_id = await self.bot.db.fetchval(
-            """SELECT vote FROM test.setup
+            """SELECT vote FROM peep.setup
                 WHERE guild_id1 = $1""", interaction.guild.id
         )
         announcement = self.bot.get_channel(announcement_id) \
@@ -363,7 +362,7 @@ class ready_button(discord.ui.View):
 
                 await self.bot.db.execute(
                     """
-                    INSERT INTO test.leaderboard(user_id1,guild_id1,likes)
+                    INSERT INTO peep.leaderboard(user_id1,guild_id1,likes)
                     VALUES($1,$2,$3)
                     ON CONFLICT (guild_id1,user_id1) DO
                     UPDATE SET likes = COALESCE(leaderboard.likes, 0) + $3 ;
@@ -482,12 +481,13 @@ class ready_button(discord.ui.View):
                                         file=first_user_submission)
             await self.bot.db.execute(
                 """
-                INSERT INTO test.leaderboard(user_id1,guild_id1,likes)
+                INSERT INTO peep.leaderboard(user_id1,guild_id1,likes)
                 VALUES($1,$2,$3)
                 ON CONFLICT (guild_id1,user_id1) DO
                 UPDATE SET likes = COALESCE(leaderboard.likes, 0) + $3 ;
                 """, self.user.id, interaction.guild.id, count1
             )
+
         elif count2 > count1:
             await first_submission.delete()
             await second_submission.delete()
@@ -504,7 +504,7 @@ class ready_button(discord.ui.View):
                                         file=second_user_submission)
             await self.bot.db.execute(
                 """
-                INSERT INTO test.leaderboard(user_id1,guild_id1,likes)
+                INSERT INTO peep.leaderboard(user_id1,guild_id1,likes)
                 VALUES($1,$2,$3)
                 ON CONFLICT (guild_id1,user_id1) DO
                 UPDATE SET likes = COALESCE(leaderboard.likes, 0) + $3 ;
@@ -515,7 +515,7 @@ class ready_button(discord.ui.View):
             await second_submission.edit(content=f'{self.user.mention}! no one won that was a draw votes:{count2}')
             await self.bot.db.execute(
                 """
-                INSERT INTO test.leaderboard(user_id1,guild_id1,likes)
+                INSERT INTO peep.leaderboard(user_id1,guild_id1,likes)
                 VALUES($1,$2,$3)
                 ON CONFLICT (guild_id1,user_id1) DO
                 UPDATE SET likes = COALESCE(leaderboard.likes, 0) + $3 ;
@@ -523,7 +523,7 @@ class ready_button(discord.ui.View):
             )
             await self.bot.db.execute(
                 """
-                INSERT INTO test.leaderboard(user_id1,guild_id1,likes)
+                INSERT INTO peep.leaderboard(user_id1,guild_id1,likes)
                 VALUES($1,$2,$3)
                 ON CONFLICT (guild_id1,user_id1) DO
                 UPDATE SET likes = COALESCE(leaderboard.likes, 0) + $3 ;
@@ -539,17 +539,17 @@ class ready_button(discord.ui.View):
             is_member_ready = False
             member1 = await self.bot.db.fetchval(
                 """
-                SELECT user_ready 
-                FROM test.duel WHERE 
-                message_id = $1 
+                SELECT user_ready
+                FROM peep.duel WHERE
+                message_id = $1
                 """, self.message.id
             )
 
             use1r = await self.bot.db.fetchval(
                 """
-                SELECT member_ready 
-                FROM test.duel WHERE 
-                message_id = $1 
+                SELECT member_ready
+                FROM peep.duel WHERE
+                message_id = $1
                 """, self.message.id)
             member = self.bot.get_user(self.member.id)
             user = self.bot.get_user(self.user.id)
@@ -557,7 +557,7 @@ class ready_button(discord.ui.View):
             if interaction.user.id == user.id:
                 if not use1r:
                     await self.bot.db.execute(
-                        """UPDATE test.duel SET member_ready=$1 WHERE message_id = $2""",
+                        """UPDATE peep.duel SET member_ready=$1 WHERE message_id = $2""",
                         True, self.message.id
                     )
                 else:
@@ -566,7 +566,7 @@ class ready_button(discord.ui.View):
             if interaction.user.id == member.id:
                 if not member1:
                     await self.bot.db.execute(
-                        """UPDATE test.duel SET user_ready=$1 WHERE message_id = $2""",
+                        """UPDATE peep.duel SET user_ready=$1 WHERE message_id = $2""",
                         True, self.message.id
                     )
                 else:
@@ -576,25 +576,25 @@ class ready_button(discord.ui.View):
 
             member1 = await self.bot.db.fetchval(
                 """
-                SELECT user_ready 
-                FROM test.duel WHERE 
-                message_id = $1 
+                SELECT user_ready
+                FROM peep.duel WHERE
+                message_id = $1
                 """, self.message.id
             )
 
             use1r = await self.bot.db.fetchval(
                 """
-                SELECT member_ready 
-                FROM test.duel WHERE 
-                message_id = $1 
+                SELECT member_ready
+                FROM peep.duel WHERE
+                message_id = $1
                 """, self.message.id)
 
             custimastion_time = await self.bot.db.fetchval(
-                """SELECT customization_time FROM test.setup 
+                """SELECT customization_time FROM peep.setup
                 WHERE guild_id1=$1""", interaction.guild.id
             )
             vote_time = await self.bot.db.fetchval(
-                """SELECT vote_time FROM test.setup 
+                """SELECT vote_time FROM peep.setup
                 WHERE guild_id1=$1""", interaction.guild.id
             )
             if custimastion_time is None:
@@ -632,22 +632,22 @@ class ready_button(discord.ui.View):
         await interaction.response.defer()
         session = self.bot.aiohttp_session
         memeid = random.choice(self.ids)
-        user_refresh = await self.bot.db.fetchval("""SELECT r_user_ready FROM test.duel WHERE message_id = $1""",
+        user_refresh = await self.bot.db.fetchval("""SELECT r_user_ready FROM peep.duel WHERE message_id = $1""",
                                                   self.message.id)
-        member_refresh = await self.bot.db.fetchval("""SELECT r_member_ready FROM test.duel WHERE message_id = $1""",
+        member_refresh = await self.bot.db.fetchval("""SELECT r_member_ready FROM peep.duel WHERE message_id = $1""",
                                                     self.message.id)
         member1 = await self.bot.db.fetchval(
             """
-            SELECT user_ready 
-            FROM test.duel WHERE 
-            message_id = $1 
+            SELECT user_ready
+            FROM peep.duel WHERE
+            message_id = $1
             """, self.message.id
         )
         use1r = await self.bot.db.fetchval(
             """
-            SELECT member_ready 
-            FROM test.duel WHERE 
-            message_id = $1 
+            SELECT member_ready
+            FROM peep.duel WHERE
+            message_id = $1
             """, self.message.id
         )
 
@@ -655,7 +655,7 @@ class ready_button(discord.ui.View):
 
             if not member1 or member_refresh or not user_refresh:
                 self.bot.loop.create_task(
-                    self.bot.db.execute("""UPDATE test.duel SET r_user_ready = $1 WHERE message_id = $2""",
+                    self.bot.db.execute("""UPDATE peep.duel SET r_user_ready = $1 WHERE message_id = $2""",
                                         True, self.message.id)
                 )
                 await interaction.followup.send('the other user must also have to refresh to work', ephemeral=True)
@@ -670,7 +670,7 @@ class ready_button(discord.ui.View):
 
             if not use1r or user_refresh or not member_refresh:
                 self.bot.loop.create_task(
-                    self.bot.db.execute("""UPDATE test.duel SET r_member_ready = $1 WHERE message_id = $2""",
+                    self.bot.db.execute("""UPDATE peep.duel SET r_member_ready = $1 WHERE message_id = $2""",
                                         True, self.message.id)
                 )
                 await interaction.followup.send('the other user must also have to refresh to work', ephemeral=True)
@@ -681,9 +681,9 @@ class ready_button(discord.ui.View):
             else:
                 await interaction.followup.send('you cant refresh any more', ephemeral=True)
 
-        user_refresh = await self.bot.db.fetchval("""SELECT r_user_ready FROM test.duel WHERE message_id = $1""",
+        user_refresh = await self.bot.db.fetchval("""SELECT r_user_ready FROM peep.duel WHERE message_id = $1""",
                                                   self.message.id)
-        member_refresh = await self.bot.db.fetchval("""SELECT r_member_ready FROM test.duel WHERE message_id = $1""",
+        member_refresh = await self.bot.db.fetchval("""SELECT r_member_ready FROM peep.duel WHERE message_id = $1""",
                                                     self.message.id)
         if member_refresh and user_refresh:
             for i in self.memes:
@@ -699,15 +699,15 @@ class ready_button(discord.ui.View):
                         attachments=[file], view=view
                     )
                     custimastion_time = await self.bot.db.fetchval(
-                        """SELECT customization_time FROM test.setup 
+                        """SELECT customization_time FROM peep.setup
                         WHERE guild_id1=$1""", interaction.guild.id
                     )
                     vote_time = await self.bot.db.fetchval(
-                        """SELECT vote_time FROM test.setup 
+                        """SELECT vote_time FROM peep.setup
                         WHERE guild_id1=$1""", interaction.guild.id
                     )
                     self.bot.loop.create_task(self.bot.db.execute(
-                        """UPDATE test.duel SET meme_id = $1 WHERE message_id = $2
+                        """UPDATE peep.duel SET meme_id = $1 WHERE message_id = $2
 
                         """, memeid, self.message.id
                     ))
@@ -806,7 +806,7 @@ class accept_bought(discord.ui.View):
     async def accept(self, interaction: discord.Interaction, button):
         if interaction.user.id == interaction.guild.owner.id or interaction.user.id == 888058231094665266:
             await interaction.response.defer(ephemeral=True)
-            await self.bot.db.execute('DELETE FROM test.inv WHERE user_id = $1 AND guild_id=$2 AND items = $3 ',
+            await self.bot.db.execute('DELETE FROM peep.inv WHERE user_id = $1 AND guild_id=$2 AND items = $3 ',
                                       self.user_id.id, self.user_id.guild.id, self.item_name)
 
             await interaction.delete_original_message()
@@ -829,7 +829,7 @@ class accept_bought(discord.ui.View):
 class thread_channel(discord.ui.View):
     def __init__(
             self,
-            user:discord.Member
+            user: discord.Member
 
     ):
         super().__init__(timeout=1440 * 60)

@@ -164,3 +164,6 @@ main.sqlite
 botconfig
 botconfig/
 *.json
+.fleet
+.vscode
+
