@@ -1,20 +1,22 @@
+"""
+:copyright: (C) 2022-present xgreenapple
+:license: MIT.
+"""
 import asyncio
-
+import logging
 import discord
 from discord import app_commands, Interaction
 from discord.ext import commands
+from pepebot import pepebot
 
 import typing
-from typing import (
-    Optional,
-    Literal
-)
+from typing import Optional
 
-from handler.Context import Context
-from handler.pagination import SimplePages
-from handler.utils import string_to_delta, GetRelativeTime
-from pepebot import pepebot
-import logging
+from handler.utils import string_to_delta
+from handler.database import (
+    reinitialisedChannel_settings,
+    reinitialisedGuild_settings,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -24,7 +26,7 @@ class setup_memme(commands.Cog):
         self.bot = bot
         self.Database = bot.Database
 
-    def Edit_Channel(
+    def setChannelSettings(
             self,
             channel: discord.TextChannel,
             *,
@@ -69,9 +71,12 @@ class setup_memme(commands.Cog):
                          "thread_msg=$8, "
                          "voting_time=$9, "
                          "max_like=$10")
+        self.bot.loop.create_task(reinitialisedChannel_settings(
+            bot=self.bot, channel=channel)
+        )
         return self.bot.loop.create_task(insert_data)
 
-    async def Guild_Settings(
+    async def setGuildSettings(
             self,
             guild: discord.Guild,
             *,
@@ -82,7 +87,6 @@ class setup_memme(commands.Cog):
             MemeAdmin: int = None,
             customization_time: int = None,
             oc=False):
-
         task = self.bot.Database.Insert(
             guild.id,
             reaction_lstnr,
@@ -111,48 +115,9 @@ class setup_memme(commands.Cog):
                          "customization_time = $7,"
                          "oc_lstnr=$8"
         )
+        self.bot.loop.create_task(reinitialisedGuild_settings(
+            bot=self.bot, guild_id=guild.id))
         return self.bot.loop.create_task(task)
-
-    async def Get_Guild_settings(self, guild: discord.Guild):
-        """
-        return the guild settings stored
-        in database and in the cache if exists
-        """
-        # get cached data
-        guild_data = self.bot.guild_cache.get(__key=guild.id)
-        # cached guild settings
-        cached_guild_settings = None
-        # check if column is row or if not get data insert
-        if guild_data is not None:
-            cached_guild_settings = guild_data["guild_settings"]
-        if cached_guild_settings is None:
-            data = await self.bot.Database.Select(
-                guild.id,
-                table="peep.guild_settings",
-                columns="*",
-                condition="guild_id=$1",
-                row=True
-            )
-            cached_guild_settings = data
-        return cached_guild_settings
-
-    async def Get_channel_settings(self, Channel: discord.TextChannel):
-        guild_data = self.bot.guild_cache.get(__key=Channel.id)
-        # cached guild settings
-        cached_channel_settings = None
-        if guild_data is not None:
-            cached_channel_settings = guild_data["channel_settings"]
-        if cached_channel_settings is None:
-            data = await self.bot.Database.Select(
-                Channel.id,
-                Channel.guild.id,
-                table="peep.Channels",
-                columns="*",
-                condition="guild_id=$2 AND channel_id = $1",
-                row=True
-            )
-            cached_channel_settings = data
-        return cached_channel_settings
 
     setup = app_commands.Group(
         name='setup',
@@ -180,266 +145,65 @@ class setup_memme(commands.Cog):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @setup.command(name="memes", description="on or off auto meme system")
+    @setup.command(name="guild_settings", description="edit guild configuration")
+    @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.describe(turn="turn on or off the whole system")
-    async def MemeListener(self, interaction: discord.Interaction, turn: typing.Literal['on', 'off']):
+    async def editGuildSettings(
+            self,
+            interaction: discord.Interaction,
+            option: typing.Literal["Auto Thread", "Meme listener", "Oc Listener"],
+            turn: typing.Literal['on', 'off']):
         # change the value to boolean value
         turned = True if turn == 'on' else False
-        # insert value to the list
-        await self.Guild_Settings(
-            guild=interaction.guild, reaction_lstnr=turned)
-        # send the message
+        settings_map = {
+            "Auto Thread": "thread_lstnr",
+            "Meme listener": "reaction_lstnr",
+            "Oc Listener": "oc"
+        }
+        setting = settings_map[option]
+        await self.setGuildSettings(guild=interaction.guild, **{setting: turned})
         await interaction.response.send_message(
             embed=discord.Embed(
                 title=f"**updated config**",
-                description=f">>> {self.bot.emoji.right}the meme listener has been turned ``{turn}``"
+                description=f">>> {self.bot.emoji.right} {option} has been turned ``{turn}``"
             ),
             ephemeral=True
         )
 
-    @setup.command(name="add_memes", description="Add meme channel")
+    @setup.command(name="channel_settings", description="edit specific channel settings")
     @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.describe(
-        channel="The channel you want the bot to react in",
-        maxlikes="the maximum like to get the meme to gallery",
-        time="maximum time to listen for likes : ``1d,1h,1w,1s,1month``")
-    async def AddMemes(self, interaction: Interaction, channel: discord.TextChannel, maxlikes: int = 4,
-                       time: typing.Optional[str] = None):
-        embed = discord.Embed()
-        # check if bot has permission in the channel
-        permission = channel.permissions_for(interaction.guild.me)
-        if not (permission.add_reactions
-                and permission.view_channel
-                and permission.manage_messages):
-            embed.title = f"**invalid permission**"
-            embed.description = f'>>> bot missing permission in the channel'
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        # if max likes is less than 2 give a error message
-        if maxlikes < 2:
-            embed.title = f"**invalid settings**"
-            embed.description = f"{self.bot.emoji.failed_emoji}" \
-                                f" maximum likes must be at least 2"
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        # insert into database
-        try:
-            await self.Edit_Channel(
-                channel=channel, max_like=maxlikes, time=time,
-                is_memeChannel=True)
-        except ValueError:
-            embed.title = "**value error**"
-            embed.description = f">>> {self.bot.emoji.failed_emoji} " \
-                                f"time must be formate of: \n" \
-                                f"1d = 1 day \n" \
-                                f"1m = 1 minute \n" \
-                                f"1h = 1 hour "
-            await interaction.response.send_message(
-                embed=embed
-            )
-            return
-        timedelta = None
-        if time:
-            try:
-                timedelta = string_to_delta(time)
-            except ValueError:
-                pass
-            timedelta = GetRelativeTime(timedelta) if timedelta else None
-
-        embed.title = "**updated config**"
-        embed.description = f">>> set the {channel.mention} " \
-                            f"to a meme channel " \
-                            f"with voting time : {timedelta}"
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @setup.command(name="threads", description="on or off auto thread")
-    @app_commands.describe(turn="turn on or off the whole system")
-    async def ThreadListener(self, interaction: discord.Interaction, turn: typing.Literal['on', 'off']):
-        # change string value to boolean value
-        turned = True if turn == 'on' else False
-        # add list to database
-        await self.Guild_Settings(guild=interaction.guild, thread_lstnr=turned)
-        await interaction.response.send_message(
-            embed=discord.Embed(
-                title=f"**updated config**",
-                description=f">>> {self.bot.emoji.right} the thread listener has been turned ``{turn}``"
-            ),
-            ephemeral=True
-        )
-
-    @setup.command(name="add_threads", description="Add auto channel")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.describe(
-        channel="The channel you want the bot to make threads in",
-        thread_msg="the message bot will send after creating thread"
-    )
-    async def AddThread(self, interaction: Interaction, channel: discord.TextChannel, thread_msg: str = None):
-        """ ADD meme channel to list """
-        embed = discord.Embed()
-        # check if bot has permission in the channel
-        permission = channel.permissions_for(interaction.guild.me)
-        if not (permission.add_reactions
-                and permission.view_channel
-                and permission.manage_messages):
-            embed.title = f"**invalid permission**"
-            embed.description = f'>>> bot missing permission in the channel {channel.mention}'
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        # insert into database
-        await self.Edit_Channel(
-            channel=channel, isThreadChannel=True, thread_msg=thread_msg)
-        embed.title = "**updated config**"
-        embed.description = f">>> now bot will create threads when " \
-                            f"a attachment in channel {channel.mention} posted"
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @setup.command(name="oc", description="on or off original content identifier")
-    @app_commands.describe(turn="turn on or off the whole system")
-    async def OCListener(self, interaction: discord.Interaction, turn: typing.Literal['on', 'off']):
-        # change string value to boolean value
-        turned = True if turn == 'on' else False
-        # add list to database
-        await self.Guild_Settings(guild=interaction.guild, oc=turned)
-        await interaction.response.send_message(
-            embed=discord.Embed(
-                title=f"**updated config**",
-                description=f">>> {self.bot.emoji.right} the oc listener has been turned ``{turn}``"
-            ),
-            ephemeral=True
-        )
-
-    @setup.command(name="add_oc", description="Add oc channel")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.describe(
-        channel="The channel you want the bot to pin messages in")
-    async def AddOC(self, interaction: Interaction, channel: discord.TextChannel):
-        """ ADD meme channel to list """
-        embed = discord.Embed()
-        # check if bot has permission in the channel
-        permission = channel.permissions_for(interaction.guild.me)
-        if not (permission.add_reactions
-                and permission.view_channel
-                and permission.manage_messages):
-            embed.title = f"**invalid permission**"
-            embed.description = f'>>> bot missing permission in the channel {channel.mention}'
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        # insert into database
-        await selfEdit_Channel(
-            channel=channel, is_oc_channel=True)
-        embed.title = "**updated config**"
-        embed.description = f">>> now bot will pin the messages " \
-                            f"with attachments that contain oc text" \
-                            f" in channel {channel.mention} posted"
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @setup.command(name="remove_oc", description="remove oc listener from channel")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.describe(
-        channel="the channel from where you want to remove oc listener")
-    async def remove_OC(self, interaction: Interaction, channel: discord.TextChannel):
-        embed = discord.Embed()
-        # insert into database
-        await self.Edit_Channel(
-            bot=self.bot, channel=channel, is_oc_channel=False)
-        embed.title = "**updated config**"
-        embed.description = f">>> oc listener from channel {channel.mention} has been removed"
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @setup.command(name="remove_thread", description="remove auto thread from channel")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.describe(
-        channel="the channel from where you want to remove thread listener")
-    async def remove_Thread(self, interaction: Interaction, channel: discord.TextChannel):
-        embed = discord.Embed()
-        # insert into database
-        await self.Edit_Channel(
-            channel=channel, isThreadChannel=False)
-        embed.title = "**updated config**"
-        embed.description = f">>> auto thread from channel {channel.mention} has been removed"
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @setup.command(name="remove_memes", description="remove meme reaction channel ")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.describe(
-        channel="the meme channel")
-    async def remove_Memes(self, interaction: Interaction, channel: discord.TextChannel):
-        embed = discord.Embed()
-        # insert into database
-        await self.Edit_Channel(
-            channel=channel, is_memeChannel=False)
-        embed.title = "**updated config**"
-        embed.description = f">>> meme channel {channel.mention} has been removed"
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @setup.command(name="thread_msg", description='change thread message of a auto thread channel')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.describe(
-        channel="the auto thread channel",
-        message="the new message text"
-    )
-    async def Thread_msg_update(
-            self, interaction: discord.Interaction, channel: discord.TextChannel,
-            message: str
+    @app_commands.describe(channel="the channel you want to change settings of",
+                           option="chose a option you  want to edit",
+                           turn="turn on or off whole option")
+    async def editChannelSettings(
+            self, interaction: Interaction, channel: discord.TextChannel,
+            option: typing.Literal["Auto thread", "Meme listener", "Oc listener"],
+            turn: typing.Literal["on", "off"]
     ):
-        # check if the given channel have auto thread turned on or off
-        is_thread_channel = await self.bot.Database.Select(
-            interaction.guild.id,
-            channel.id,
-            table="peep.Channels",
-            columns="is_threadChannel",
-            condition="guild_id = $1 AND channel_id = $2"
-        )
-        # if channel is not a thread channel it will return a error message
-        if not is_thread_channel:
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="**invalid config**",
-                    description=f">>> {channel.mention} is not a thread channel"
-                )
-            )
+        embed = discord.Embed(title="**updated Config**")
+        permission = channel.permissions_for(interaction.guild.me)
+        required_permissions = [permission.manage_messages, permission.view_channel,
+                                permission.read_messages, permission.add_reactions]
+        string = ["manage_messages", "view_channel", "read_messages", "add_reactions"]
+        if not all(required_permissions):
+            embed.title = f"**invalid permissions**"
+            embed.description = f">>> {self.bot.right} bot missing any of " \
+                                f"below permissions in channel:{channel.mention} \n" \
+                                f" \n".join(string)
+            await interaction.response.send_message(embed=embed,ephemeral=True)
             return
-        # edit the message
-        await self.Edit_Channel(
-            channel=channel, thread_msg=message)
-        # send the response message
-        embed = discord.Embed(
-            title="**Updated config**",
-            description=f">>> the thread message for channel {channel.mention} has been updated to \n"
-                        f"{message}"
-        )
-        await interaction.response.send_message(embed=embed)
 
-    @setup.command(name="update_likes", description='update the likes of meme channel')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.describe(
-        channel="the auto thread channel")
-    async def updateLikes(
-            self, interaction: discord.Interaction, channel: discord.TextChannel, max_like: int = 2
-    ):
-        embed = discord.Embed()
-
-        if max_like < 2:
-            embed.title = "**invalid input**"
-            embed.description = ">>> the max like must be maximum than 2"
-            await interaction.response.send_message(
-                embed=embed, ephemeral=True
-            )
-
-        isMemeChannel = await self.bot.Database.Select(
-            interaction.guild.id,
-            channel.id,
-            table="peep.Channels",
-            columns="is_memeChannel",
-            condition="guild_id = $1 AND channel_id = $2"
-        )
-
-        if not isMemeChannel:
-            embed.title = "**invalid config**"
-            embed.description = ">>> the channel is not a meme channel"
-        await self.Edit_Channel(
-            channel=channel, max_like=max_like)
-        # send the message
+        turned = True if turn == "on" else False
+        settings_map = {
+            "Auto thread": "isThreadChannel",
+            "Meme listener": "is_memeChannel",
+            "Oc listener": "is_oc_channel"
+        }
+        setting = settings_map[option]
+        await self.setChannelSettings(channel=channel,**{setting: turned})
         embed.title = "**updated config**"
-        embed.description = f">>> updated like for meme channel {channel.mention} to ``{max_like}``"
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        embed.description = f">>> {option} for {channel.mention} has been turned {turn}"
+        await interaction.response.send_message(embed=embed,ephemeral=True)
 
 
 async def setup(bot: pepebot) -> None:
