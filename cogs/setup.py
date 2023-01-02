@@ -1,41 +1,168 @@
 import asyncio
-import io
-import os
-import random
-import typing
-from io import BytesIO
 
-import aiohttp
 import discord
-from discord import app_commands
+from discord import app_commands, Interaction
 from discord.ext import commands
-from discord.ext.commands import BucketType, cooldown
+
+import typing
+from typing import (
+    Optional,
+    Literal
+)
 
 from handler.Context import Context
 from handler.pagination import SimplePages
-from handler.view import duel_button
+from handler.utils import string_to_delta, GetRelativeTime
 from pepebot import pepebot
 import logging
 
-
-class leaderboard(SimplePages):
-    def __init__(self, entries: list, *, ctx: Context, per_page: int = 12, title: str = None):
-        converted = entries
-        print(entries)
-        super().__init__(converted, per_page=per_page, ctx=ctx)
+_log = logging.getLogger(__name__)
 
 
 class setup_memme(commands.Cog):
     def __init__(self, bot: pepebot) -> None:
         self.bot = bot
+        self.Database = bot.Database
 
-    setup = app_commands.Group(name='setup', description='setup commands for you', guild_only=True,
-                               default_permissions=discord.Permissions(manage_guild=True))
+    def Edit_Channel(
+            self,
+            channel: discord.TextChannel,
+            *,
+            is_memeChannel: bool = False,
+            isThreadChannel: bool = False,
+            is_oc_channel: bool = False,
+            is_deadChat: bool = False,
+            is_voteChannel: bool = False,
+            thread_msg: Optional[str] = None,
+            time: Optional[str] = None,
+            max_like: int = 4,
+    ) -> asyncio.Task:
+        """
+        Edit channel settings that is stored in the database
+        """
+
+        guild = channel.guild
+        # change the string value to timedelta
+        timedelta = string_to_delta(time) if time else None
+        insert_data = self.Database.Insert(
+            channel.id, guild.id, is_memeChannel,
+            isThreadChannel, is_deadChat, is_voteChannel,
+            is_oc_channel, thread_msg, timedelta, max_like,
+            table="peep.Channels",
+            columns="channel_id,"
+                    "guild_id,"
+                    "is_memeChannel,"
+                    "is_threadChannel,"
+                    "is_deadChat,"
+                    "is_voteChannel,"
+                    "is_ocChannel,"
+                    "thread_msg,"
+                    "voting_time,"
+                    "max_like",
+            values="$1,$2,$3,$4,$5,$6,$7,$8,$9,$10",
+            on_Conflicts="(guild_id,channel_id) DO UPDATE SET "
+                         "is_memeChannel = $3, "
+                         "is_threadChannel=$4, "
+                         "is_deadChat=$5, "
+                         "is_voteChannel=$6, "
+                         "is_ocChannel=$7, "
+                         "thread_msg=$8, "
+                         "voting_time=$9, "
+                         "max_like=$10")
+        return self.bot.loop.create_task(insert_data)
+
+    async def Guild_Settings(
+            self,
+            guild: discord.Guild,
+            *,
+            reaction_lstnr=False,
+            thread_lstnr=False,
+            vote_time: int = None,
+            vote: int = None,
+            MemeAdmin: int = None,
+            customization_time: int = None,
+            oc=False):
+
+        task = self.bot.Database.Insert(
+            guild.id,
+            reaction_lstnr,
+            thread_lstnr,
+            vote_time,
+            vote,
+            MemeAdmin,
+            customization_time,
+            oc,
+            table="peep.guild_settings",
+            columns="guild_id,"
+                    "reaction_lstnr,"
+                    "thread_lstnr,"
+                    "vote_time,"
+                    "vote,"
+                    "MemeAdmin,"
+                    "customization_time,"
+                    "oc_lstnr",
+            values="$1,$2,$3,$4,$5,$6,$7,$8",
+            on_Conflicts="(guild_id) DO UPDATE SET "
+                         "reaction_lstnr=$2, "
+                         "thread_lstnr = $3, "
+                         "vote_time = $4, "
+                         "vote = $5, "
+                         "MemeAdmin = $6,"
+                         "customization_time = $7,"
+                         "oc_lstnr=$8"
+        )
+        return self.bot.loop.create_task(task)
+
+    async def Get_Guild_settings(self, guild: discord.Guild):
+        """
+        return the guild settings stored
+        in database and in the cache if exists
+        """
+        # get cached data
+        guild_data = self.bot.guild_cache.get(__key=guild.id)
+        # cached guild settings
+        cached_guild_settings = None
+        # check if column is row or if not get data insert
+        if guild_data is not None:
+            cached_guild_settings = guild_data["guild_settings"]
+        if cached_guild_settings is None:
+            data = await self.bot.Database.Select(
+                guild.id,
+                table="peep.guild_settings",
+                columns="*",
+                condition="guild_id=$1",
+                row=True
+            )
+            cached_guild_settings = data
+        return cached_guild_settings
+
+    async def Get_channel_settings(self, Channel: discord.TextChannel):
+        guild_data = self.bot.guild_cache.get(__key=Channel.id)
+        # cached guild settings
+        cached_channel_settings = None
+        if guild_data is not None:
+            cached_channel_settings = guild_data["channel_settings"]
+        if cached_channel_settings is None:
+            data = await self.bot.Database.Select(
+                Channel.id,
+                Channel.guild.id,
+                table="peep.Channels",
+                columns="*",
+                condition="guild_id=$2 AND channel_id = $1",
+                row=True
+            )
+            cached_channel_settings = data
+        return cached_channel_settings
+
+    setup = app_commands.Group(
+        name='setup',
+        description='setup commands for you',
+        guild_only=True,
+        default_permissions=discord.Permissions(manage_guild=True)
+    )
 
     @setup.command(name='help', description='help related to setup command')
-    @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.default_permissions(manage_guild=True)
     async def setup_help(self, interaction: discord.Interaction):
         embed = discord.Embed(
             title=f'``Setup``',
@@ -53,889 +180,266 @@ class setup_memme(commands.Cog):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        # enable or disable the whole deadchat system
-
-    @setup.command(name='deadchat', description='enable or disable dead chat command')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def deadchat_disable(self, interaction: discord.Interaction, type: typing.Literal['true', 'false']):
-        await interaction.response.defer(ephemeral=True)
-        if type == 'true':
-            await self.bot.db.execute(
-                """ 
-                    INSERT INTO peep.utils(guild_id,active)
-                    VALUES($1,$2)
-                    ON CONFLICT (guild_id) DO
-                    UPDATE SET active = $2
-                """, interaction.guild.id, True
-            )
-        elif type == 'false':
-            await self.bot.db.execute(
-                """ 
-                    INSERT INTO peep.utils(guild_id,active)
-                    VALUES($1,$2)
-                    ON CONFLICT (guild_id) DO
-                    UPDATE SET active = $2
-                """, interaction.guild.id, False
-            )
-        embed = discord.Embed(
-            title='``deadchat listener``',
-            description=f"{self.bot.right} deadchat listener has been updated to ``{type}`` \n"
-                        f"to setup role do ``$setup deadchat_role <role>``"
+    @setup.command(name="memes", description="on or off auto meme system")
+    @app_commands.describe(turn="turn on or off the whole system")
+    async def MemeListener(self, interaction: discord.Interaction, turn: typing.Literal['on', 'off']):
+        # change the value to boolean value
+        turned = True if turn == 'on' else False
+        # insert value to the list
+        await self.Guild_Settings(
+            guild=interaction.guild, reaction_lstnr=turned)
+        # send the message
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title=f"**updated config**",
+                description=f">>> {self.bot.emoji.right}the meme listener has been turned ``{turn}``"
+            ),
+            ephemeral=True
         )
 
-        await interaction.followup.send(embed=embed, ephemeral=True)
-
-    ## dead chat commands , and setup
-    @setup.command(name='deadchat_role', description='setup dead chat role')
-    @app_commands.default_permissions(manage_guild=True)
+    @setup.command(name="add_memes", description="Add meme channel")
     @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
     @app_commands.describe(
-        role='deadchat ping role'
-    )
-    async def deadchat_role(self, interaction: discord.Interaction, role: discord.Role):
-        await interaction.response.defer(ephemeral=True)
-        await self.bot.db.execute(
-            """ 
-                INSERT INTO peep.utils(guild_id,role_id1)
-                VALUES($1,$2)
-                ON CONFLICT (guild_id) DO
-                UPDATE SET role_id1 = $2
-            """, interaction.guild.id, role.id
-        )
-
-        embed = discord.Embed(
-            title='``deadchat listener``',
-            description=f"{self.bot.right} deadchat role has been updated to ``{role.mention}`` \n"
-        )
-
-        await interaction.followup.send(embed=embed)
-
-    # enable or disable meme listener
-    @setup.command(name='meme_listener', description='enable or disable meme listener')
-    @app_commands.default_permissions(manage_guild=True)
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def disable_meme(self, interaction: discord.Interaction, type: typing.Literal['true', 'false']):
-        await interaction.response.defer(ephemeral=True)
-        if type == 'true':
-            await self.bot.db.execute(
-                """ 
-                INSERT INTO peep.setup(guild_id,listener)
-                VALUES($1,$2)
-                ON CONFLICT (guild_id) DO
-                UPDATE SET listener = $2
-            """, interaction.guild.id, True
-            )
-        elif type == 'false':
-            await self.bot.db.execute(
-                """ 
-                    INSERT INTO peep.setup(guild_id,listener)
-                    VALUES($1,$2)
-                    ON CONFLICT (guild_id) DO
-                    UPDATE SET listener = $2
-                """, interaction.guild.id, False
-            )
-        embed = discord.Embed(
-            title='``meme listener``',
-            description=f"{self.bot.right} meme listener has been updated to ``{type}`` \n"
-                        f"to setup channel do ``/setup meme <channel>``"
-        )
-
-        await interaction.followup.send(embed=embed)
-
-    # setup voting channel deprecated
-    @setup.command(name='vote', description='setup vote channel')
-    @app_commands.default_permissions(manage_guild=True)
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def vote_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        await interaction.response.defer(ephemeral=True)
-        await self.bot.db.execute(
-            """
-            INSERT INTO peep.setup(guild_id,vote)
-            VALUES($1,$2) 
-            ON CONFLICT (guild_id) DO
-            UPDATE SET vote = $2 ;
-            """, interaction.guild.id, channel.id
-        )
-        embed = discord.Embed(
-            title='``vote channel``',
-            description=f"{self.bot.right} vote channel has been successfully updated to {channel.mention}"
-        )
-        await interaction.followup.send(embed=embed)
-
-    # setup voting time for the memes
-    @setup.command(name='vote_time', description='setup voting time for the memes')
-    @app_commands.default_permissions(manage_guild=True)
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def vote_time(self, interaction: discord.Interaction, voting_time: int):
-        if voting_time > 60:
-            embed = discord.Embed(description=f'{self.bot.right} the time must be under 1 hours')
-            await interaction.response.send_message(embed=embed, epehemeral=True)
+        channel="The channel you want the bot to react in",
+        maxlikes="the maximum like to get the meme to gallery",
+        time="maximum time to listen for likes : ``1d,1h,1w,1s,1month``")
+    async def AddMemes(self, interaction: Interaction, channel: discord.TextChannel, maxlikes: int = 4,
+                       time: typing.Optional[str] = None):
+        embed = discord.Embed()
+        # check if bot has permission in the channel
+        permission = channel.permissions_for(interaction.guild.me)
+        if not (permission.add_reactions
+                and permission.view_channel
+                and permission.manage_messages):
+            embed.title = f"**invalid permission**"
+            embed.description = f'>>> bot missing permission in the channel'
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        # if max likes is less than 2 give a error message
+        if maxlikes < 2:
+            embed.title = f"**invalid settings**"
+            embed.description = f"{self.bot.emoji.failed_emoji}" \
+                                f" maximum likes must be at least 2"
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
-        await interaction.response.defer(ephemeral=True)
-
-        await self.bot.db.execute(
-            """
-            INSERT INTO peep.setup(guild_id,vote_time)
-            VALUES($1,$2)
-            ON CONFLICT (guild_id) DO
-            UPDATE SET vote_time = $2 ;
-            """, interaction.guild.id, voting_time
-        )
-
-        embed = discord.Embed(
-            title='``setup``',
-            description=f'>>> {self.bot.right} **voting time has been updated to ``{voting_time}`` min**'
-        )
-
-        await interaction.followup.send(embed=embed)
-
-    # customization time made for battle command
-    @setup.command(name='customisation_time', description='setup customisation time for meme battle')
-    @app_commands.default_permissions(manage_guild=True)
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def customisation_time(self, interaction: discord.Interaction, customisation_time: int):
-
-        if customisation_time > 60:
-            embed = discord.Embed(description=f'{self.bot.right} the time must be under 15 min')
-            await interaction.response.send_message(embed=embed, epehemeral=True)
-            return
-        await interaction.response.defer(ephemeral=True)
-        await self.bot.db.execute(
-            """
-            INSERT INTO peep.setup(guild_id,customization_time)
-            VALUES($1,$2)
-            ON CONFLICT (guild_id) DO
-            UPDATE SET customization_time = $2 ;
-            """, interaction.guild.id, customisation_time
-        )
-
-        embed = discord.Embed(
-            title='``setup``',
-            description=f'>>> {self.bot.right}**customisation time has been updated to ``{customisation_time}`` min**'
-        )
-        await interaction.followup.send(embed=embed)
-
-    # oc listener channel
-    @setup.command(name='oc-channel', description='setup meme channel for OC listener')
-    @app_commands.default_permissions(manage_guild=True)
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def meme(self, interaction: discord.Interaction, mode: typing.Literal['add', 'remove'],
-                   channel: discord.TextChannel):
-        await interaction.response.defer(ephemeral=True)
-
-        channels = await self.bot.db.fetchval(
-            """ SELECT meme_channel FROM peep.channels WHERE guild_id=$1""",
-            interaction.guild.id
-        )
-
-        if mode == 'add':
-            if channels is not None:
-                if channel.id in channels:
-                    embed = discord.Embed(description=f'{self.bot.right} the channel is already in the list')
-                    await interaction.followup.send(embed=embed)
-                    return
-
-        if channels is not None:
-            if mode == 'remove':
-                if channel.id not in channels:
-                    embed = discord.Embed(
-                        description=f'{self.bot.right} there is no channel called {channel.mention} in the list')
-                    await interaction.followup.send(embed=embed)
-                    return
-
-        if channels is None:
-            channels = []
-            channels.append(channel.id)
-        else:
-            if mode == 'add':
-                channels.append(channel.id)
-            else:
-                channels.remove(channel.id)
-
-        await self.bot.db.execute(
-            """
-            INSERT INTO peep.channels(guild_id,meme_channel)
-            VALUES($1,$2) 
-            ON CONFLICT (guild_id) DO
-            UPDATE SET meme_channel = $2 ;
-            """, interaction.guild.id, channels
-        )
-        embed = discord.Embed(
-            title='``OC channel``',
-            description=f"{self.bot.right} {channel.mention} {'added' if mode == 'add' else 'removed'} to the list"
-        )
-        await interaction.followup.send(embed=embed)
-
-    # enable or disable the whole thread system
-    @setup.command(name='thread-listener', description='enable or disable thread-listener')
-    @app_commands.describe(
-        message='the message that bot will send in the thread')
-    @app_commands.default_permissions(manage_guild=True)
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def disable_thread(self, interaction: discord.Interaction, type: typing.Literal['true', 'false'],
-                             message: str = None):
-        await interaction.response.defer(ephemeral=True)
-        if type == 'true':
-            await self.bot.db.execute(
-                """ 
-                INSERT INTO peep.setup(guild_id,thread_ls,thread_message)
-                VALUES($1,$2,$3)
-                ON CONFLICT (guild_id) DO
-                UPDATE SET thread_ls = $2,thread_message = $3
-            """, interaction.guild.id, True, message if message else "make sure the meme is **original**"
-            )
-        elif type == 'false':
-            await self.bot.db.execute(
-                """ 
-                    INSERT INTO peep.setup(guild_id,thread_ls)
-                    VALUES($1,$2)
-                    ON CONFLICT (guild_id) DO
-                    UPDATE SET thread_ls = $2
-                """, interaction.guild.id, False
-            )
-
-        embed = discord.Embed(
-            title='``meme listener``',
-            description=f"{self.bot.right} thread listener has been updated to ``{type}`` \n"
-                        f"to setup channel do ``/setup thread-channel <channel>``"
-        )
-        await interaction.followup.send(embed=embed)
-
-    # add or remove thread channels from the list
-    @setup.command(name='thread-channel', description='setup thread channel for oc listener')
-    @app_commands.default_permissions(manage_guild=True)
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def thread_channel(self, interaction: discord.Interaction, mode: typing.Literal['remove', 'add'],
-                             channel: discord.TextChannel, msg: str = None):
-        await interaction.response.defer(ephemeral=True)
-        channels = await self.bot.db.fetch(
-            """SELECT channel_id FROM  peep.thread_channel WHERE guild_id = $1""",
-            interaction.guild.id
-        )
-        if mode == 'add':
-            for i in channels:
-                if i['channel_id'] == channel.id:
-                    if msg is None:
-                        await interaction.followup.send("channel already in list if you want to remove run "
-                                                        "``thread-channel mode:remove``")
-                    else:
-                        if msg.lower() == 'none':
-                            msg = None
-                        await self.bot.db.execute(
-                            """
-                            INSERT INTO peep.thread_channel(guild_id, channel_id,msg)
-                            VALUES($1,$2,$3) 
-                            ON CONFLICT (guild_id, channel_id) DO
-                            UPDATE SET msg = $3
-                            """, interaction.guild.id, channel.id, msg
-                        )
-
-                    return
-
-            await self.bot.db.execute(
-                """
-                INSERT INTO peep.thread_channel(guild_id, channel_id,msg)
-                VALUES($1,$2,$3) 
-                ON CONFLICT (guild_id, channel_id) DO
-                UPDATE SET msg = $3
-                """, interaction.guild.id, channel.id, msg
-            )
-            embed = discord.Embed(
-                title='``thread channel``',
-                description=f"{self.bot.right} thread channel added ``{channel.mention}`` \n"
-                            f"message:``none``"
-            )
-            await interaction.followup.send(
+        # insert into database
+        try:
+            await self.Edit_Channel(
+                channel=channel, max_like=maxlikes, time=time,
+                is_memeChannel=True)
+        except ValueError:
+            embed.title = "**value error**"
+            embed.description = f">>> {self.bot.emoji.failed_emoji} " \
+                                f"time must be formate of: \n" \
+                                f"1d = 1 day \n" \
+                                f"1m = 1 minute \n" \
+                                f"1h = 1 hour "
+            await interaction.response.send_message(
                 embed=embed
             )
-        elif mode == 'remove':
-            for i in channels:
-                if i['channel_id'] == channel.id:
-                    await self.bot.db.execute(
-                        """
-                        DELETE FROM peep.thread_channel
-                        WHERE guild_id = $1 AND channel_id = $2
-                        """, interaction.guild.id, channel.id
-                    )
-                    embed = discord.Embed(
-                        title='``thread channel deleted``',
-                        description=f"{self.bot.right} thread channel deleted: ``{channel.mention}`` \n"
-                    )
-
-                    await interaction.followup.send(
-                        embed=embed
-                    )
-                    return
-            await interaction.followup.send("the channel already not in the list try again")
-
-    # setup shop log channel
-    @setup.command(name='shop-log', description='setup shop log channel')
-    @app_commands.default_permissions(manage_guild=True)
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def shop_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        await interaction.response.defer(ephemeral=True)
-        await self.bot.db.execute(
-            """
-            INSERT INTO peep.channels(guild_id,shop_log)
-            VALUES($1,$2) 
-            ON CONFLICT (guild_id) DO
-            UPDATE SET shop_log = $2 ;
-            """, interaction.guild.id, channel.id
-        )
-        embed = discord.Embed(
-            title='``shop_log channel``',
-            description=f"{self.bot.right} shop_log channel has been successfully updated to {channel.mention}"
-        )
-        await interaction.followup.send(embed=embed)
-
-    # setup reaction channel which bot will react in
-    @setup.command(name='meme-channel',
-                   description='add a reaction channel where bot will automatically react to memes and move it to '
-                               'gallery')
-    @app_commands.default_permissions(manage_guild=True)
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def reaction_channel(self, interaction: discord.Interaction, mode: typing.Literal['remove', 'add'],
-                               channel: discord.TextChannel,
-                               ):
-        await interaction.response.defer(ephemeral=True)
-
-        channels = await self.bot.db.fetchval(
-            """ SELECT reaction_channel FROM peep.channels WHERE guild_id=$1""",
-            interaction.guild.id
-        )
-
-        if mode == 'add':
-            if channels is not None:
-                if channel.id in channels:
-                    embed = discord.Embed(description=f'{self.bot.right} the channel is already in the list')
-                    await interaction.followup.send(embed=embed)
-                    return
-
-        if channels is not None:
-            if mode == 'remove':
-                if channel.id not in channels:
-                    embed = discord.Embed(
-                        description=f'{self.bot.right} there is no channel called {channel.mention} in the list')
-                    await interaction.followup.send(embed=embed)
-                    return
-
-        if channels is None:
-            channels = []
-            channels.append(channel.id)
-        else:
-            if mode == 'add':
-                channels.append(channel.id)
-            else:
-                channels.remove(channel.id)
-
-        await self.bot.db.execute(
-            """
-            INSERT INTO peep.channels(guild_id,reaction_channel)
-            VALUES($1,$2) 
-            ON CONFLICT (guild_id) DO
-            UPDATE SET reaction_channel = $2 ;
-            """, interaction.guild.id, channels
-        )
-        embed = discord.Embed(
-            title='``reaction channel``',
-            description=f"{self.bot.right} {channel.mention} {'added' if mode == 'add' else 'removed'} to the list"
-        )
-        await interaction.followup.send(embed=embed)
-
-    # enable or disable the whole like system
-    @setup.command(name='auto-reactions', description='enable or disable auto reaction system')
-    @app_commands.default_permissions(manage_guild=True)
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def desable_reaction(self, interaction: discord.Interaction, type: typing.Literal['true', 'false']):
-        await interaction.response.defer(ephemeral=True)
-        if type == 'true':
-            await self.bot.db.execute(
-                """ 
-                INSERT INTO peep.setup(guild_id,reaction_ls)
-                VALUES($1,$2)
-                ON CONFLICT (guild_id) DO
-                UPDATE SET reaction_ls = $2
-            """, interaction.guild.id, True
-            )
-        elif type == 'false':
-            await self.bot.db.execute(
-                """ 
-                    INSERT INTO peep.setup(guild_id,reaction_ls)
-                    VALUES($1,$2)
-                    ON CONFLICT (guild_id) DO
-                    UPDATE SET reaction_ls = $2
-                """, interaction.guild.id, False
-            )
-        embed = discord.Embed(
-            title='``auto reaction``',
-            description=f"{self.bot.right} reaction listener has been updated to ``{type}`` \n"
-                        f"to setup channel do ``/setup reaction-channel``"
-        )
-
-        await interaction.followup.send(embed=embed)
-
-    # setup likes for each gallery
-    @setup.command(name='likes', description='how many likes need to get to the gallery levels channel')
-    @app_commands.default_permissions(manage_guild=True)
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def likes(
-            self, interaction: discord.Interaction, channel: discord.TextChannel, like: int
-    ):
-
-        await interaction.response.defer(ephemeral=True)
-
-        await self.bot.db.execute(
-            """
-            INSERT INTO peep.likes(guild_id,channel,likes)
-            VALUES($1,$2,$3) 
-            ON CONFLICT (guild_id,channel) DO
-            UPDATE SET likes = $3;
-            """, interaction.guild.id, channel.id, like
-        )
-
-        embed = discord.Embed(
-            title='``likes ``',
-            description=f"{self.bot.right} **likes for {channel.mention} has been updated to {like} {self.likes}**"
-        )
-        await interaction.followup.send(embed=embed)
-
-    @setup.command(name='remove-gallery', description='remove a gallery channel from the list')
-    @app_commands.default_permissions(manage_guild=True)
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def gallery_remove(
-            self, interaction: discord.Interaction,
-            channel: typing.Literal['gallery_lvl1', 'gallery_lvl2', 'gallery_lvl3', 'gallery_lvl4', 'gallery_lvl5',
-                                    'gallery_lvl6']
-    ):
-        await interaction.response.defer(ephemeral=True)
-
-        channels = await self.bot.db.fetch(
-            """
-            SELECT gallery_l1,gallery_l2,gallery_l3,gallery_l4,gallery_l5,gallery_l6
-            FROM peep.channels WHERE guild_id= $1;
-            """, interaction.guild.id
-        )
-
-        newchannels = [channels[0]['gallery_l1'], channels[0]['gallery_l2'], channels[0]['gallery_l3'],
-                       channels[0]['gallery_l4'],
-                       channels[0]['gallery_l5'], channels[0]['gallery_l6']]
-        newchannels3 = []
-        msg = ""
-
-        if channel == 'gallery_lvl1':
-            if newchannels[0]:
-                for i in range(len(newchannels)):
-                    newchannels[i] = None
-            else:
-                await interaction.followup.send("**the gallery already not exist**")
-        elif channel == 'gallery_lvl2':
-            if newchannels[1]:
-                for i in range(len(newchannels)):
-                    if i >= 1:
-                        newchannels[i] = None
-            else:
-                await interaction.followup.send("**the gallery already not exist**")
-                return
-
-        elif channel == 'gallery_lvl3':
-            if newchannels[2]:
-                for i in range(len(newchannels)):
-                    if i >= 2:
-                        newchannels[i] = None
-            else:
-                await interaction.followup.send("**the gallery already not exist**")
-                return
-
-        elif channel == 'gallery_lvl4':
-            if newchannels[3]:
-                for i in range(len(newchannels)):
-                    if i >= 3:
-                        newchannels[i] = None
-            else:
-                await interaction.followup.send("**the gallery already not exist**")
-                return
-
-        elif channel == 'gallery_lvl5':
-            if newchannels[4]:
-                for i in range(len(newchannels)):
-                    if i >= 4:
-                        newchannels[i] = None
-            else:
-                await interaction.followup.send("**the gallery already not exist**")
-                return
-
-        elif channel == 'gallery_lvl6':
-            if newchannels[5]:
-                for i in range(len(newchannels)):
-                    if i >= 5:
-                        newchannels[i] = None
-            else:
-                await interaction.followup.send("**the gallery already not exist**")
-                return
-
-        for i in newchannels:
-            if i:
-                cs = interaction.guild.get_channel(int(i))
-                newchannels3.append(cs.mention)
-        print(newchannels[1])
-
-        await self.bot.db.execute(
-            """
-            INSERT INTO peep.channels(guild_id,gallery_l1,gallery_l2,gallery_l3,gallery_l4,gallery_l5,gallery_l6)
-            VALUES($1,$2,$3,$4,$5,$6,$7) 
-            ON CONFLICT (guild_id) DO
-            UPDATE SET gallery_l1 = $2,gallery_l2 = $3,gallery_l3 = $4,
-            gallery_l4 = $5,gallery_l5 = $6,gallery_l6 = $7;
-            """, interaction.guild.id, newchannels[0], newchannels[1], newchannels[2], newchannels[3], newchannels[4],
-            newchannels[5])
-
-        if not newchannels3:
-            await interaction.followup.send("all gallery channels has been removed")
             return
-        embed_msg = ' <:doubleright:975326725389037568> '.join(newchannels3)
+        timedelta = None
+        if time:
+            try:
+                timedelta = string_to_delta(time)
+            except ValueError:
+                pass
+            timedelta = GetRelativeTime(timedelta) if timedelta else None
 
-        embed = discord.Embed(
-            title='``gallery ``',
-            description=f"{self.bot.right} **gallery channels has been updated** \n"
-                        f"{embed_msg}"
+        embed.title = "**updated config**"
+        embed.description = f">>> set the {channel.mention} " \
+                            f"to a meme channel " \
+                            f"with voting time : {timedelta}"
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @setup.command(name="threads", description="on or off auto thread")
+    @app_commands.describe(turn="turn on or off the whole system")
+    async def ThreadListener(self, interaction: discord.Interaction, turn: typing.Literal['on', 'off']):
+        # change string value to boolean value
+        turned = True if turn == 'on' else False
+        # add list to database
+        await self.Guild_Settings(guild=interaction.guild, thread_lstnr=turned)
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title=f"**updated config**",
+                description=f">>> {self.bot.emoji.right} the thread listener has been turned ``{turn}``"
+            ),
+            ephemeral=True
         )
 
-        await interaction.followup.send(embed=embed)
-
-    @setup.command(name='gallery', description='setup gallery channels')
+    @setup.command(name="add_threads", description="Add auto channel")
+    @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.describe(
-        gallery_lvl1="first channel where the memes will go after reaching certain likes",
-        gallery_lvl2="the second gallery channel where the memes will be posted from first gallery channel after "
-                     "reaching certain likes ",
-        gallery_lvl3="the third gallery channel where the memes will be posted from second gallery channel after "
-                     "reaching certain likes ",
-        gallery_lvl4="the forth lvl of gallery channel where the memes will be posted from third gallery channel after "
-                     "reaching certain likes ",
-        gallery_lvl5="the fifth gallery channel where the memes will be posted from forth gallery channel after "
-                     "reaching certain likes ",
-        gallery_lvl6="the sixth gallery channel where the memes will be posted from fifth gallery channel after "
-                     "reaching certain likes "
+        channel="The channel you want the bot to make threads in",
+        thread_msg="the message bot will send after creating thread"
     )
-    @app_commands.default_permissions(manage_guild=True)
+    async def AddThread(self, interaction: Interaction, channel: discord.TextChannel, thread_msg: str = None):
+        """ ADD meme channel to list """
+        embed = discord.Embed()
+        # check if bot has permission in the channel
+        permission = channel.permissions_for(interaction.guild.me)
+        if not (permission.add_reactions
+                and permission.view_channel
+                and permission.manage_messages):
+            embed.title = f"**invalid permission**"
+            embed.description = f'>>> bot missing permission in the channel {channel.mention}'
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        # insert into database
+        await self.Edit_Channel(
+            channel=channel, isThreadChannel=True, thread_msg=thread_msg)
+        embed.title = "**updated config**"
+        embed.description = f">>> now bot will create threads when " \
+                            f"a attachment in channel {channel.mention} posted"
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @setup.command(name="oc", description="on or off original content identifier")
+    @app_commands.describe(turn="turn on or off the whole system")
+    async def OCListener(self, interaction: discord.Interaction, turn: typing.Literal['on', 'off']):
+        # change string value to boolean value
+        turned = True if turn == 'on' else False
+        # add list to database
+        await self.Guild_Settings(guild=interaction.guild, oc=turned)
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title=f"**updated config**",
+                description=f">>> {self.bot.emoji.right} the oc listener has been turned ``{turn}``"
+            ),
+            ephemeral=True
+        )
+
+    @setup.command(name="add_oc", description="Add oc channel")
     @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def gallery(
-            self, interaction: discord.Interaction, gallery_lvl1: discord.TextChannel = None, *,
-            gallery_lvl2: discord.TextChannel = None, gallery_lvl3: discord.TextChannel = None,
-            gallery_lvl4: discord.TextChannel = None, gallery_lvl5: discord.TextChannel = None,
-            gallery_lvl6: discord.TextChannel = None
-    ):
-
-        await interaction.response.defer(ephemeral=True)
-        if not (gallery_lvl1 or gallery_lvl2 or gallery_lvl3 or gallery_lvl4 or gallery_lvl5 or gallery_lvl6):
-            await interaction.followup.send(
-                "choose least one channel"
-            )
-        channels = await self.bot.db.fetch(
-            """
-            SELECT gallery_l1,gallery_l2,gallery_l3,gallery_l4,gallery_l5,gallery_l6
-            FROM peep.channels WHERE guild_id= $1;
-            """, interaction.guild.id
-        )
-
-        print('channels two', channels)
-        if channels:
-
-            newchannels = [channels[0]['gallery_l1'], channels[0]['gallery_l2'], channels[0]['gallery_l3'],
-                           channels[0]['gallery_l4'],
-                           channels[0]['gallery_l5'], channels[0]['gallery_l6']]
-
-        else:
-            newchannels = [None, None, None,
-                           None,
-                           None, None]
-        if gallery_lvl1:
-            await self.bot.db.execute(
-                """
-                INSERT INTO peep.channels(guild_id,gallery_l1)
-                VALUES($1,$2) 
-                ON CONFLICT (guild_id) DO
-                UPDATE SET gallery_l1 = $2;
-                """, interaction.guild.id, gallery_lvl1.id
-            )
-        if gallery_lvl2:
-            if not newchannels[0] and not gallery_lvl1:
-                await interaction.followup.send("It is not possible to set up gallery level2 if you have not set up "
-                                                "gallery level1")
-                return
-
-            await self.bot.db.execute(
-                """
-                INSERT INTO peep.channels(guild_id,gallery_l2)
-                VALUES($1,$2) 
-                ON CONFLICT (guild_id) DO
-                UPDATE SET gallery_l2 = $2;
-                """, interaction.guild.id, gallery_lvl2.id
-            )
-        if gallery_lvl3:
-            if not newchannels[1] and not gallery_lvl2:
-                await interaction.followup.send("It is not possible to set up gallery level3 if you have not set up "
-                                                "gallery level2")
-                return
-            await self.bot.db.execute(
-                """
-                INSERT INTO peep.channels(guild_id,gallery_l3)
-                VALUES($1,$2) 
-                ON CONFLICT (guild_id) DO
-                UPDATE SET gallery_l3 = $2;
-                """, interaction.guild.id, gallery_lvl3.id
-            )
-        if gallery_lvl4:
-            if not newchannels[2] and not gallery_lvl3:
-                await interaction.followup.send("It is not possible to set up gallery level4 if you have not set up "
-                                                "gallery level3")
-                return
-            await self.bot.db.execute(
-                """
-                INSERT INTO peep.channels(guild_id,gallery_l4)
-                VALUES($1,$2) 
-                ON CONFLICT (guild_id) DO
-                UPDATE SET gallery_l4 = $2;
-                """, interaction.guild.id, gallery_lvl4.id
-            )
-        if gallery_lvl5:
-            if not newchannels[3] and not gallery_lvl4:
-                await interaction.followup.send("It is not possible to set up gallery level5 if you have not set up "
-                                                "gallery level4")
-                return
-            await self.bot.db.execute(
-                """
-                INSERT INTO peep.channels(guild_id,gallery_l5)
-                VALUES($1,$2) 
-                ON CONFLICT (guild_id) DO
-                UPDATE SET gallery_l1 = $5;
-                """, interaction.guild.id, gallery_lvl5.id
-            )
-        if gallery_lvl6:
-            if not newchannels[4] and not gallery_lvl5:
-                await interaction.followup.send("It is not possible to set up gallery level6 if you have not set up "
-                                                "gallery level5")
-                return
-            await self.bot.db.execute(
-                """
-                INSERT INTO peep.channels(guild_id,gallery_l6)
-                VALUES($1,$2) 
-                ON CONFLICT (guild_id) DO
-                UPDATE SET gallery_l6 = $2;
-                """, interaction.guild.id, gallery_lvl6.id
-            )
-
-        channels = await self.bot.db.fetch(
-            """
-            SELECT gallery_l1,gallery_l2,gallery_l3,gallery_l4,gallery_l5,gallery_l6
-            FROM peep.channels WHERE guild_id= $1;
-            """, interaction.guild.id
-        )
-        print('channels two', channels)
-
-        newchannels = [channels[0]['gallery_l1'], channels[0]['gallery_l2'], channels[0]['gallery_l3'],
-                       channels[0]['gallery_l4'],
-                       channels[0]['gallery_l5'], channels[0]['gallery_l6']]
-
-        newchannels3 = []
-
-        for i in newchannels:
-            if i is not None:
-                cs = interaction.guild.get_channel(int(i))
-                newchannels3.append(cs.mention)
-
-        embed_msg = ' <:doubleright:975326725389037568> '.join(newchannels3)
-
-        embed = discord.Embed(
-            title='``gallery ``',
-            description=f"{self.bot.right} **gallery channels has been updated** \n"
-                        f"{embed_msg}"
-        )
-        await interaction.followup.send(embed=embed)
-
-    @setup.command(name='meme-manager', description='setup meme manager role')
-    @app_commands.default_permissions(manage_guild=True)
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def role_add_meme_manager(self, interaction: discord.Interaction, role: discord.Role):
-        await self.bot.db.execute(
-            """
-            INSERT INTO peep.setup(guild_id,mememanager_role)
-            VALUES ($1,$2)
-            ON CONFLICT(guild_id) DO 
-            UPDATE SET mememanager_role = $2
-            """, interaction.guild.id, role.id
-        )
-
-    @setup.command(name='rewards-system', description='turn on or turn off whole reward system')
-    @app_commands.default_permissions(manage_guild=True)
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def reward_system(self, interaction: discord.Interaction, type: typing.Literal['true', 'false']):
-        await interaction.response.defer(ephemeral=True)
-        if type == 'true':
-            await self.bot.db.execute(
-                """ 
-                INSERT INTO peep.setup(guild_id,rewards)
-                VALUES($1,$2)
-                ON CONFLICT (guild_id) DO
-                UPDATE SET rewards = $2
-            """, interaction.guild.id, True
-            )
-        elif type == 'false':
-            await self.bot.db.execute(
-                """ 
-                    INSERT INTO peep.setup(guild_id,rewards)
-                    VALUES($1,$2)
-                    ON CONFLICT (guild_id) DO
-                    UPDATE SET rewards = $2
-                """, interaction.guild.id, False
-            )
-        embed = discord.Embed(
-            title='``auto reaction``',
-            description=f"{self.bot.right} reward system has been updated to  ``{type}`` \n"
-                        f"to setup channel do ``/setup rewards role``"
-        )
-
-        await interaction.followup.send(embed=embed)
-
-    @setup.command(name='reward-roles', description='setup roles for each channel')
     @app_commands.describe(
-        limit_1="first messages limit for the channel",
-        role_1="the reward role that member will get after reaching the first limit ",
-        limit_2="the role for third gallery channel that member will get ",
-        role_2="the role for forth gallery channel that member will get ",
-        limit_3="the role for fifth gallery channel that member will get ",
-        role_3="the role for sixth gallery channel that member will get "
-    )
-    @app_commands.default_permissions(manage_guild=True)
+        channel="The channel you want the bot to pin messages in")
+    async def AddOC(self, interaction: Interaction, channel: discord.TextChannel):
+        """ ADD meme channel to list """
+        embed = discord.Embed()
+        # check if bot has permission in the channel
+        permission = channel.permissions_for(interaction.guild.me)
+        if not (permission.add_reactions
+                and permission.view_channel
+                and permission.manage_messages):
+            embed.title = f"**invalid permission**"
+            embed.description = f'>>> bot missing permission in the channel {channel.mention}'
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        # insert into database
+        await selfEdit_Channel(
+            channel=channel, is_oc_channel=True)
+        embed.title = "**updated config**"
+        embed.description = f">>> now bot will pin the messages " \
+                            f"with attachments that contain oc text" \
+                            f" in channel {channel.mention} posted"
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @setup.command(name="remove_oc", description="remove oc listener from channel")
     @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.guild_only()
-    async def reward_roles1(
-            self, interaction: discord.Interaction,
-            channel: typing.Literal['gallery_l1', 'gallery_l2', 'gallery_l3', 'gallery_l4', 'gallery_l5', 'gallery_l6'],
-            limit_1: int = None, *,
-            role_1: discord.Role = None, limit_2: int = None,
-            role_2: discord.Role = None, limit_3: int = None,
-            role_3: discord.Role = None
+    @app_commands.describe(
+        channel="the channel from where you want to remove oc listener")
+    async def remove_OC(self, interaction: Interaction, channel: discord.TextChannel):
+        embed = discord.Embed()
+        # insert into database
+        await self.Edit_Channel(
+            bot=self.bot, channel=channel, is_oc_channel=False)
+        embed.title = "**updated config**"
+        embed.description = f">>> oc listener from channel {channel.mention} has been removed"
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @setup.command(name="remove_thread", description="remove auto thread from channel")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.describe(
+        channel="the channel from where you want to remove thread listener")
+    async def remove_Thread(self, interaction: Interaction, channel: discord.TextChannel):
+        embed = discord.Embed()
+        # insert into database
+        await self.Edit_Channel(
+            channel=channel, isThreadChannel=False)
+        embed.title = "**updated config**"
+        embed.description = f">>> auto thread from channel {channel.mention} has been removed"
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @setup.command(name="remove_memes", description="remove meme reaction channel ")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.describe(
+        channel="the meme channel")
+    async def remove_Memes(self, interaction: Interaction, channel: discord.TextChannel):
+        embed = discord.Embed()
+        # insert into database
+        await self.Edit_Channel(
+            channel=channel, is_memeChannel=False)
+        embed.title = "**updated config**"
+        embed.description = f">>> meme channel {channel.mention} has been removed"
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @setup.command(name="thread_msg", description='change thread message of a auto thread channel')
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.describe(
+        channel="the auto thread channel",
+        message="the new message text"
+    )
+    async def Thread_msg_update(
+            self, interaction: discord.Interaction, channel: discord.TextChannel,
+            message: str
     ):
-        await interaction.response.defer(ephemeral=True)
+        # check if the given channel have auto thread turned on or off
+        is_thread_channel = await self.bot.Database.Select(
+            interaction.guild.id,
+            channel.id,
+            table="peep.Channels",
+            columns="is_threadChannel",
+            condition="guild_id = $1 AND channel_id = $2"
+        )
+        # if channel is not a thread channel it will return a error message
+        if not is_thread_channel:
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="**invalid config**",
+                    description=f">>> {channel.mention} is not a thread channel"
+                )
+            )
+            return
+        # edit the message
+        await self.Edit_Channel(
+            channel=channel, thread_msg=message)
+        # send the response message
+        embed = discord.Embed(
+            title="**Updated config**",
+            description=f">>> the thread message for channel {channel.mention} has been updated to \n"
+                        f"{message}"
+        )
+        await interaction.response.send_message(embed=embed)
 
-        if not (limit_1 or limit_2 or limit_3):
-            return await interaction.followup.send("**you must specify one limit**")
+    @setup.command(name="update_likes", description='update the likes of meme channel')
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.describe(
+        channel="the auto thread channel")
+    async def updateLikes(
+            self, interaction: discord.Interaction, channel: discord.TextChannel, max_like: int = 2
+    ):
+        embed = discord.Embed()
 
-        channels = await self.bot.db.fetch(
-            """
-            SELECT gallery_l1,gallery_l2,gallery_l3,gallery_l4,gallery_l5,gallery_l6
-            FROM peep.channels WHERE guild_id= $1;
-            """, interaction.guild.id
+        if max_like < 2:
+            embed.title = "**invalid input**"
+            embed.description = ">>> the max like must be maximum than 2"
+            await interaction.response.send_message(
+                embed=embed, ephemeral=True
+            )
+
+        isMemeChannel = await self.bot.Database.Select(
+            interaction.guild.id,
+            channel.id,
+            table="peep.Channels",
+            columns="is_memeChannel",
+            condition="guild_id = $1 AND channel_id = $2"
         )
 
-        print('channels two', channels)
-
-        newchannels = [channels[0]['gallery_l1'], channels[0]['gallery_l2'], channels[0]['gallery_l3'],
-                       channels[0]['gallery_l4'],
-                       channels[0]['gallery_l5'], channels[0]['gallery_l6']]
-        channelnew = None
-
-        if channel == 'gallery_l1':
-            if newchannels[0]:
-                channelnew = newchannels[0]
-            else:
-                return await interaction.followup.send("**the gallery_lvl1 has been not set pls run the command "
-                                                       "``/setup gallery``**")
-        elif channel == 'gallery_l2':
-            if newchannels[1]:
-                channelnew = newchannels[1]
-            else:
-                return await interaction.followup.send("**the gallery_l2 has been not set pls run the command "
-                                                       "``/setup gallery``**")
-        elif channel == 'gallery_l3':
-            if newchannels[2]:
-                channelnew = newchannels[2]
-            else:
-                return await interaction.followup.send("**the gallery_lvl3 has been not set pls run the command "
-                                                       "``/setup gallery``**")
-        elif channel == 'gallery_l4':
-            if newchannels[3]:
-                channelnew = newchannels[3]
-            else:
-                return await interaction.followup.send("**the gallery_lvl4 has been not set pls run the command "
-                                                       "``/setup gallery``**")
-        elif channel == 'gallery_l5':
-            if newchannels[4]:
-                channelnew = newchannels[4]
-            else:
-                return await interaction.followup.send("**the gallery_lvl5 has been not set pls run the command "
-                                                       "``/setup gallery``**")
-        elif channel == 'gallery_l6':
-            if newchannels[5]:
-                channelnew = newchannels[5]
-            else:
-                return await interaction.followup.send("**the gallery_lvl6 has been not set pls run the command "
-                                                       "``/setup gallery``**")
-
-        if limit_1:
-            if not role_1:
-                return await interaction.followup.send("you have to also setup the reward role_1 that will"
-                                                       " member get after reaching the limit")
-            if role_2 and role_3:
-                if limit_1 > limit_2 or limit_1 > limit_3:
-                    return await interaction.followup.send("first limit cant be greater than other limits")
-
-        if limit_2:
-            if not role_2:
-                return await interaction.followup.send("you have to also setup the reward role_2 that will"
-                                                       " member get after reaching the limit")
-
-            if role_1 and role_3:
-                if limit_2 > limit_3 or limit_2 < limit_1:
-                    return await interaction.followup.send("second limit cant be greater than last limits")
-        if limit_3:
-            if not role_3:
-                return await interaction.followup.send("you have to also setup the reward role_3 that will"
-                                                       " member get after reaching the limit")
-
-            if role_2:
-                if limit_3 < limit_2:
-                    return await interaction.followup.send("last limit cant be lower than previous limits")
-        role_1 = role_1.id if role_1 else None
-        role_2 = role_2.id if role_2 else None
-        role_3 = role_3.id if role_3 else None
-        await self.bot.db.execute(
-            """
-            INSERT INTO peep.rewards(guild_id,channel_id1,limit_1,limit_2,limit_3,role_1,role_2,role_3)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-            ON CONFLICT (guild_id,channel_id1 )DO
-            UPDATE SET limit_1 = $3 , limit_2 = $4, limit_3 = $5,role_1=$6,role_2=$7,role_3 = $8
-            """, interaction.guild.id, channelnew, limit_1, limit_2, limit_3, role_1, role_2, role_3
-        )
-        a = await self.bot.db.fetch(
-            """
-            SELECT * FROM peep.rewards 
-            WHERE guild_id=$1 AND channel_id1 = $2
-            """, interaction.guild.id, channelnew
-        )
-        embed = discord.Embed(title='``role reward``',
-                              description='**role reward has been set for gallery channels 1 \n'
-                                          f'``limit``:{limit_1} ``limit2``:{limit_2} ``limit3``:{limit_3} \n'
-                              )
-        await interaction.followup.send(embed=embed)
+        if not isMemeChannel:
+            embed.title = "**invalid config**"
+            embed.description = ">>> the channel is not a meme channel"
+        await self.Edit_Channel(
+            channel=channel, max_like=max_like)
+        # send the message
+        embed.title = "**updated config**"
+        embed.description = f">>> updated like for meme channel {channel.mention} to ``{max_like}``"
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 async def setup(bot: pepebot) -> None:
