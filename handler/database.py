@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 database class for peepbot
 ~~~~~~~~~~~~~~~~~~~
@@ -9,6 +11,12 @@ import json
 import asyncio
 import asyncpg
 import logging
+
+import discord
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pepebot import pepebot
 
 log = logging.getLogger(__name__)
 
@@ -133,19 +141,16 @@ class database(Database):
             schema=schema
         )
 
-    # create table
     async def CreateTable(self, *args, table_name: str, columns: str):
         query = f"""CREATE TABLE IF NOT EXISTS {table_name}( {columns} );"""
         return await self.db.execute(query, *args)
 
-    # create schema
     async def CreateSchema(self, *args, schema_name: str):
         query = f"""CREATE SCHEMA IF NOT EXISTS {schema_name};"""
         return await self.db.execute(query, *args)
 
-    # fetch-value from database
     async def Select(self, *args, table: str, columns: str, condition: str = None,
-                     return_everything=False, Filter: str = None, row: bool= False):
+                     return_everything=False, Filter: str = None, row: bool = False):
 
         condition = f"WHERE {condition}" if condition else ""
         Filter = Filter if Filter else ""
@@ -158,17 +163,14 @@ class database(Database):
         else:
             return await self.db.fetchval(query, *args)
 
-    # delete row
     async def Delete(self, *args, table: str, condition: str):
         query = f"""DELETE FROM {table} WHERE {condition}"""
         return await self.db.execute(query, *args)
 
-    # update row
     async def Update(self, *args, table: str, SET: str, condition: str):
         query = f"""UPDATE {table} SET {SET} WHERE {condition}"""
         return await self.db.execute(query, *args)
 
-    # add column to a table
     async def AddColumn(self, *args, table: str, column: str, datatype: str,
                         check_if_exists: bool = False):
         Already_exists = None
@@ -183,17 +185,14 @@ class database(Database):
             return await self.db.execute(query, *args)
         return None
 
-    # drop column from the list
     async def delete_column(self, *args, table: str, column: str):
         query = f"ALTER TABLE {table} DROP COLUMN {column}"
         return await self.db.execute(query, *args)
 
-    # update column from the list
     async def UpdateColumn(self, *args, table: str, column: str, dataType: str):
         query = f"""ALTER TABLE {table} ALTER COLUMN {column} TYPE {dataType}"""
         return await self.db.execute(query, *args)
 
-    # insert row
     async def Insert(self, *args, table: str, columns: str, values: str, on_Conflicts: str = None):
         if on_Conflicts:
             on_Conflicts = f"ON CONFLICT {on_Conflicts}"
@@ -205,3 +204,72 @@ class database(Database):
                 {on_Conflicts}
                 """
         return await self.db.execute(query, *args)
+
+
+async def Get_Guild_settings(bot: pepebot, guild: discord.Guild):
+    """
+    return the guild settings stored
+    in database and in the cache if exists
+    """
+    guild_cached_data = bot.guild_cache.get(guild.id)
+    # cached guild settings
+    cached_guild_settings = None
+    # check if column is row or if not get data insert
+    if guild_cached_data is not None:
+        cached_guild_settings = guild_cached_data["guild_settings"]
+    if cached_guild_settings is None:
+        settings = await reinitialisedGuild_settings(bot=bot, guild_id=guild.id)
+        cached_guild_settings = settings
+    return cached_guild_settings
+
+
+async def Get_channel_settings(bot: pepebot, Channel: discord.TextChannel):
+    """
+    return channel settings from cached data
+    if exist else from the database
+    """
+    guild_data = bot.guild_cache.get(Channel.guild.id)
+    # cached guild settings
+    channel_column = guild_data.get(Channel.id) if guild_data else None
+    cached_channel_settings = None
+    if channel_column is not None:
+        cached_channel_settings = channel_column[Channel.id]
+    if cached_channel_settings is None:
+        data = await reinitialisedChannel_settings(bot=bot, channel=Channel)
+        cached_channel_settings = data
+    return cached_channel_settings
+
+
+async def reinitialisedGuild_settings(bot: pepebot, guild_id: int):
+    """
+    Get the current data from guild settings and append
+    to guild cache
+    """
+    settings = await bot.Database.Select(
+        guild_id,
+        table="peep.guild_settings",
+        columns="*",
+        condition="guild_id=$1",
+        row=True
+    )
+    bot.guild_cache.setdefault(guild_id, {})["guild_settings"] = settings
+    return settings
+
+
+async def reinitialisedChannel_settings(bot: pepebot, channel: discord.TextChannel):
+    """
+    Get the current data from guild settings and append
+    to guild cache
+    """
+    settings = await bot.Database.Select(
+        channel.id,
+        channel.guild.id,
+        table="peep.Channels",
+        columns="*",
+        condition="guild_id=$2 AND channel_id = $1",
+        row=True
+    )
+    channel_settings = bot.guild_cache.setdefault(channel.guild.id, {})
+    channel_settings.setdefault(channel.id, {})["channel_settings"] = settings
+    print(bot.guild_cache[channel.guild.id][channel.id]["channel_settings"])
+    return settings
