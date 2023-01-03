@@ -2,7 +2,9 @@ import asyncio
 import io
 import os
 import random
+import secrets
 import typing
+import logging
 from datetime import datetime, timedelta
 from io import BytesIO
 import re
@@ -16,7 +18,10 @@ from pepebot import pepebot
 from handler.Context import Context
 from handler.pagination import SimplePages
 from handler.view import duel_button, thread_channel
-import logging
+from handler.database import (
+    Get_channel_settings,
+    Get_Guild_settings
+)
 
 
 class leaderboard(SimplePages):
@@ -158,14 +163,15 @@ async def handle_gallery(bot: pepebot, message: discord.Message, announcement_id
 
 
 async def GetAttachments(message: discord.Message, links: bool = False):
-    AllowedTypes = ("Image", "video")
+    AllowedTypes = ("image", "video")
     attachments = message.attachments
     embeds = message.embeds
     if (not attachments or len(attachments) == 0) \
-            or (not embeds or len(embeds) == 0):
+            and (not embeds or len(embeds) == 0):
         return
     Resolved_Attachments = []
     for image in attachments:
+        print(image.content_type)
         if image.content_type.startswith(AllowedTypes):
             Resolved_Attachments.append(image)
 
@@ -199,141 +205,46 @@ class listeners(commands.Cog):
         self.bot = bot
         self.MsgLikes = {}
         self.Database = self.bot.Database
+        self.cachedLists = {}
 
-    @commands.Cog.listener('on_message')
-    async def memes(self, message: discord.Message):
-
-        if message.type != discord.MessageType.default:
-            return
-
-        if message.author.bot:
-            return
-
-        channel = await self.bot.db.fetchval("""SELECT meme_channel FROM peep.channels WHERE guild_id =$1""",
-                                             message.guild.id)
-        is_disabled = await self.bot.db.fetchval("""SELECT listener FROM peep.setup WHERE guild_id =$1""",
-                                                 message.guild.id)
-        if not is_disabled:
-            return
-        if not channel:
-            return
-
-        has_attachment = False
-        has_embed = False
-
-        if len(message.attachments):
-            has_attachment = True
-
-        elif len(message.embeds):
-            for embed in message.embeds:
-                if embed.type == 'image':
-                    has_embed = True
-                    break
-        else:
-            return
-
-        if has_attachment or has_embed:
-            message_check = re.sub(r'[^A-Za-z0-9]', '', message.content)
-            if message_check.lower() == 'oc':
-                pinned_msg = await message.channel.pins()
-                if len(pinned_msg) == 50:
-                    await pinned_msg[-1].unpin(reason='removing old pins')
-                await message.pin(reason='original content')
-
-    @commands.Cog.listener('on_message')
-    async def thread_create(self, message: discord.Message):
-
-        # check if the message is normal
-        if message.type != discord.MessageType.default:
-            return
-        if message.author.bot:
-            return
-
-        Setup = await self.bot.Database.Select(
-            message.guild.id,
-            table="peep.setup",
-            columns="thread_ls, mememanager_role",
-            condition="guild_id=$1",
-            row=True
-        )
-        is_enabled = Setup["thread_ls"]
-        MemeManagerRole = Setup["mememanager_role"]
-        if not is_enabled:
-            return
-
-        Channel_settings = await self.bot.Database.Select(
-            message.guild.id,
-            message.channel.id,
-            table="peep.thread_channel",
-            columns="channel_id,msg",
-            condition="guild_id =$1 and channel_id = $2",
-            row=True
-        )
-
-        ThreadChannelID = Channel_settings["channel_id"]
-        MessageText = Channel_settings["msg"]
-
-        if not ThreadChannelID:
-            return
-
-        Attachment = await GetAttachments(message=message)
-        if not Attachment and len(Attachment) == 0:
-            return
-
-        Name = None
-
-        thread = await message.channel.create_thread(
-            name=f"{message.author.name} ({message.created_at.microsecond})",
-            message=message, auto_archive_duration=60)
-
-        rolemention = message.guild.get_role(rolemention)
-
-        rolemention = rolemention.mention if rolemention else message.author.mention
-        msg = msg if msg else f" {rolemention} Make Sure the meme is **original**"
-        view = thread_channel(user=message.author)
-        message = await thread.send(msg, view=view)
-        return message
-
-    @commands.Cog.listener('on_message')
-    async def likes_handler(self, message: discord.Message):
-        # return if system message
-        if message.channel.type != discord.ChannelType.text:
-            return
-        if message.type != discord.MessageType.default:
-            return
-        if message.author.bot:
-            return
-
-        Attachments = await GetAttachments(message=message)
-        if not Attachments or len(Attachments) == 0:
-            return
-
-        Channel: typing.Optional[int] = None
-
-        if not Channel or message.channel.id != Channel:
-            return
-
-        User = message.author
-        Guild = message.guild
-        await message.add_reaction(self.bot.emoji.like)
-        self.MsgLikes[message.id] = {"message": message, "likes": 0}
-
-    @commands.Cog.listener(name="on_reaction_add")
-    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
-        message = reaction.message
+    @commands.Cog.listener(name="on_message")
+    async def AutoThreadCreate(self, message: discord.Message):
+        guild = message.guild
+        user = message.author
+        channel = message.channel
+        attachments = await GetAttachments(message=message)
         if user.bot:
             return
-        if message.id not in self.MsgLikes:
+        if message.type != discord.MessageType.default:
             return
-        if reaction.emoji != self.bot.emoji.like:
+        if channel.type != discord.ChannelType.text:
+            return
+        if attachments is None or len(attachments) == 0:
             return
 
-        member = message.guild.get_member(user.id)
-        self.MsgLikes[message.id]["likes"] = self.MsgLikes[message.id]["likes"] + 1
-        if True:
-            ...
-        self.bot.loop.create_task(AddLikes(bot=self.bot, user=member))
+        guild_settings = await Get_Guild_settings(bot=self.bot, guild=guild)
+        isThreadListenerEnabled = guild_settings["thread_lstnr"]
+        if not isThreadListenerEnabled:
+            return
+        settings = await Get_channel_settings(bot=self.bot, Channel=channel)
+        if not settings:
+            return
+        isThreadChannel = settings["is_threadchannel"]
+        if not isThreadChannel:
+            return
+        MemeManagerRole_id = guild_settings["memeadmin"]
+        MemeManagerRole = guild.get_role(MemeManagerRole_id)
+        threadName = f"{user.name}({secrets.token_hex(5)})"
+        threadMsg = settings['thread_msg'] if settings["thread_msg"] else \
+            f"{MemeManagerRole.mention if MemeManagerRole else user.mention}" \
+            f" make sure that the meme is original"
 
+        thread = await channel.create_thread(
+            name=threadName, message=message, auto_archive_duration=1440)
+        view = thread_channel(user=user)
+        thread_message = await thread.send(content=threadMsg, view=view)
+        view.message = thread_message
+        return
 
 async def setup(bot: pepebot) -> None:
     await bot.add_cog(
