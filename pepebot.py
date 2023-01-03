@@ -2,7 +2,7 @@
 Peepbot main runner
 ~~~~~~~~~~~~~~~~~~~
 starter of the peep bot for discord py
-:copyright: ©xgreenapple
+:copyright: (C) 2022-present xgreenapple
 :license: MIT.
 """
 
@@ -18,6 +18,7 @@ import asyncio
 import datetime
 import typing
 import aiohttp
+import aioredis
 import psutil
 
 import discord
@@ -26,13 +27,14 @@ from discord.ext import commands, tasks
 from collections import Counter
 from itertools import cycle
 from platform import python_version
-from typing import Optional
+from typing import Optional,TYPE_CHECKING
 
 from handler import Context
 from handler.utils import emojis, Colour
-from handler.database import database
 from handler.logger import logger
 from handler.tasks import CheckEconomyItems
+from handler.cache import Guild_cache
+from handler.database import database
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +74,7 @@ class pepebot(commands.Bot):
         self.emoji = emojis()
         self.colors = Colour()
         self.spam_count = Counter()
+        self.guild_cache: Guild_cache = Guild_cache()
         self._app_info: Optional[discord.AppInfo] = None
         self.taskrunner: Optional[CheckEconomyItems] = None
         self.owner_id = 888058231094665266
@@ -105,7 +108,6 @@ class pepebot(commands.Bot):
     # initialize the bot, connect to the websocket
     async def setup_hook(self) -> None:
         # aiohttp client session we will use it later
-        # while making the request ot other apis
         self.aiohttp_session = aiohttp.ClientSession(loop=self.loop)
         self.console_log("session started")
         # initialize the bot app info
@@ -122,6 +124,7 @@ class pepebot(commands.Bot):
         await self.Database.initialize()
         self.db = self.database = self.database_connection_pool = self.Database.database
         await self.initialize_database()
+        # connect to redis server
 
         self.console_log("database setup done")
         # bot startup task
@@ -171,152 +174,69 @@ class pepebot(commands.Bot):
 
     # Setup every tables :)
     async def initialize_database(self):
-
-        # database for duel commands
         await self.Database.CreateTable(
-            table_name="peep.duel", columns=
-            """
-            user_1            BIGINT NOT NULL,
-            user_2            BIGINT NOT NULL,
-            is_user_ready          boolean DEFAULT FALSE,
-            is_member_ready        boolean DEFAULT FALSE,
-            message_id          BIGINT NOT NULL,
-            PRIMARY KEY	        (message_id),
-            r_user_ready        boolean DEFAULT FALSE,
-            r_member_ready      boolean DEFAULT FALSE,
-            img2_id             BIGINT,
-            meme_id             TEXT
+            table_name="peep.Guilds",
+            columns="""
+            guild_id              BIGINT NOT NULL,   
+            PRIMARY KEY          (guild_id)
             """
         )
-
-        # leaderboard for memes based on likes
         await self.Database.CreateTable(
-            table_name="peep.leaderboard",
-            columns=
-            """
-            user_id           BIGINT NOT NULL,
-            channel_id        BIGINT,
-            likes          INT DEFAULT 0,
-            PRIMARY KEY (user_id,channel_id)
-            """
-        )
-
-        # store all the likes
-        await self.Database.CreateTable(
-            table_name="peep.likes",
-            columns=
-            """
-            guild_id   BIGINT NOT NULL,
-            channel     BIGINT,
-            likes       BIGINT DEFAULT 5,
-            PRIMARY KEY (guild_id,channel)
-            """
-        )
-
-        # basically its store the role ids to be used later
-        await self.Database.CreateTable(
-            table_name="peep.utils",
-            columns=
-            """
-            guild_id       BIGINT NOT NULL,
-            role_id        BIGINT,
-            active         BOOLEAN DEFAULT FALSE,
-            PRIMARY KEY    (guild_id)
-            """
-        )
-
-        # setup rewards roles
-        await self.Database.CreateTable(
-            table_name="peep.rewards",
-            columns=
-            """
+            table_name="peep.Users",
+            columns="""
+            user_id      BIGINT NOT NULL,
             guild_id     BIGINT NOT NULL,
-            channel_id   BIGINT NOT NULL,
-            limit_1      BIGINT,
-            limit_2      BIGINT,
-            limit_3      BIGINT,
-            role_1       BIGINT,
-            role_2       BIGINT,
-            role_3       BIGINT,
-            PRIMARY KEY (guild_id1,channel_id1)
+            FOREIGN KEY (guild_id) REFERENCES peep.Guilds(guild_id),
+            PRIMARY KEY (guild_id,user_id)
+            """
+        )
+        await self.Database.CreateTable(
+            table_name="peep.Channels",
+            columns="""
+            channel_id           BIGINT NOT NULL,
+            guild_id             BIGINT,
+            is_memeChannel       boolean DEFAULT FALSE,
+            is_threadChannel     boolean DEFAULT FALSE,
+            is_deadChat          boolean DEFAULT FALSE,
+            is_ocChannel         boolean DEFAULT FALSE,
+            is_voteChannel       boolean DEFAULT FALSE,
+            max_like             INT DEFAULT 5,
+            voting_time          INTERVAL DEFAULT NULL,
+            thread_msg           TEXT,
+            PRIMARY KEY          (guild_id,channel_id),
+            FOREIGN KEY (guild_id) REFERENCES peep.Guilds(guild_id)
             """
         )
 
         # store the settings stats
         await self.Database.CreateTable(
-            table_name="peep.setup",
+            table_name="peep.guild_settings",
             columns=
             """
-            guild_id           BIGINT NOT NULL,
+            guild_id           BIGINT UNIQUE,
             vote               BIGINT,
-            reaction_ls        BOOLEAN DEFAULT FALSE,
-            thread_ls          BOOLEAN DEFAULT FALSE,
-            listener           BOOLEAN DEFAULT FALSE,
-            thread_message     TEXT,
-            rewards            BOOLEAN DEFAULT FALSE,
+            reaction_lstnr     BOOLEAN DEFAULT FALSE,
+            thread_lstnr       BOOLEAN DEFAULT FALSE,
+            oc_lstnr           BOLEAN DEFAULT FALSE,
             vote_time          BIGINT DEFAULT 60,
-            mememanager_role   BIGINT,
+            MemeAdmin          BIGINT,
             customization_time BIGINT DEFAULT 5,
-            PRIMARY KEY        (guild_id)
+            FOREIGN KEY (guild_id) REFERENCES peep.Guilds(guild_id)
+            """
+        )
+        await self.Database.CreateTable(
+            table_name="peep.user_details",
+            columns=
+            """
+            guild_id     BIGINT NOT NULL,
+            user_id      BIGINT NOT NULL,
+            likes        integer DEFAULT 0,
+            points       FLOAT DEFAULT 0,
+            FOREIGN KEY (user_id,guild_id) REFERENCES peep.Users(user_id,guild_id),
+            UNIQUE      (guild_id,user_id)
             """
         )
 
-        # store gallery channels ids
-        await self.Database.CreateTable(
-            table_name="peep.channels",
-            columns=
-            """
-            guild_id         BIGINT NOT NULL,
-            gallery_l1        BIGINT,
-            gallery_l2        BIGINT,
-            gallery_l3        BIGINT,
-            gallery_l4        BIGINT,
-            gallery_l5        BIGINT,
-            gallery_l6        BIGINT,
-            vote              BIGINT,
-            meme_channel      BIGINT[],
-            thread_channel    BIGINT[],
-            reaction_channel  BIGINT[],
-            shop_log          BIGINT,
-            PRIMARY KEY (guild_id)
-            """
-        )
-
-        # I forgot what it does
-        await self.Database.CreateTable(
-            table_name="peep.msg",
-            columns=
-            """
-            guild_id           BIGINT NOT NULL,
-            channel_id         BIGINT NOT NULL,
-            user_id            BIGINT NOT NULL,
-            limit1             BIGINT DEFAULT 0,
-            PRIMARY KEY (guild_id,channel_id,user_id)
-            """
-        )
-
-        # store thread listener channel ids
-        await self.Database.CreateTable(
-            table_name="peep.thread_channel",
-            columns=
-            """
-            guild_id          BIGINT NOT NULL,
-            channel_id        BIGINT NOT NULL,
-            msg               TEXT,
-            PRIMARY KEY (guild_id,channel_id)
-            """
-        )
-        # store economy related stuffs, most valuable one
-        await self.Database.CreateTable(
-            table_name="peep.economy",
-            columns=
-            """
-            guild_id          BIGINT NOT NULL,
-            user_id           BIGINT NOT NULL,
-            points            FLOAT DEFAULT 0,
-            PRIMARY KEY (guild_id,user_id)
-            """
-        )
         # manage shop items
         await self.Database.CreateTable(
             table_name="peep.shop",
@@ -330,27 +250,29 @@ class pepebot(commands.Bot):
         )
         # user Inventory
         await self.Database.CreateTable(
-            table_name="peep.inv",
+            table_name="peep.inventory",
             columns=
             """
-            guild_id           BIGINT,
-            user_id            BIGINT,
-            items              TEXT,
-            PRIMARY KEY		   (items),
-            expired            TIMESTAMP,
-            FOREIGN KEY (items) REFERENCES peep.shop(items)
-            ON DELETE CASCADE ON UPDATE CASCADE
+            guild_id               BIGINT NOT NULL,
+            user_id                BIGINT NOT NULL,
+            items                  TEXT UNIQUE,
+            expired                TIMESTAMP,
+            FOREIGN KEY (items)    REFERENCES peep.shop(items)
+            ON DELETE CASCADE ON   UPDATE CASCADE,
+            FOREIGN KEY (user_id,guild_id)  REFERENCES peep.Users(user_id,guild_id),
+            UNIQUE                 (user_id,guild_id)
             """
         )
         await self.Database.CreateTable(
             table_name="peep.booster",
             columns=
             """
-            guild_id      BIGINT,
-            item_name     TEXT,
+            guild_id      BIGINT UNIQUE,
+            item_name     TEXT UNIQUE,
             threshold     FLOAT,
             expired       INTERVAL DEFAULT NULL,
-            PRIMARY KEY	  (guild_id)
+            PRIMARY KEY	  (guild_id),
+            FOREIGN KEY (guild_id) REFERENCES peep.Guilds(guild_id)
             """
         )
 
@@ -446,6 +368,8 @@ class pepebot(commands.Bot):
 token = os.environ.get('BETATOKEN')
 app_ID = os.environ.get('APPLICATION_ID')
 password = os.environ.get('DBPASSWORD')
+redis_pass = os.environ.get("REDISPASS")
 host = os.environ.get('DBHOST')
 USER = os.environ.get('DBUSER')
 DBNAME = os.environ.get('DBNAME')
+
