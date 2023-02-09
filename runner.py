@@ -1,43 +1,52 @@
-from enum import Enum
+
+import asyncio
+import sys
+
+import discord.errors as discord_errors
+from pepebot import pepebot
 
 import logging
-import sys
-import asyncio
-
-import aiohttp
-from aiohttp import ClientConnectionError
-
-from pepebot import pepebot
 from handler.logger import logger
 
 _log = logging.getLogger(__name__)
-if __name__ == "__main__":
 
+
+async def main():
     client = pepebot()
-    # logger, log into file   
-    log = logger(
+    levels = {
+        "discord": logging.INFO,
+        "discordHTTP": logging.DEBUG,
+        "aiohttp": logging.INFO,
+        "aiohttp_server": logging.DEBUG,
+        "aiohttp_web": logging.DEBUG,
+        "aiohttp_client": logging.DEBUG,
+        "aiohttp_access": logging.DEBUG,
+        "asyncio": logging.WARNING,
+        "asyncpg": logging.DEBUG
+    }
+
+    # logger, log into file
+    client.logger = logger(
         FileName='botconfig/logs/sussybot.log',
+        is_consoleHandler=True,
         output=sys.stderr,
-        outputHandler=True,
-        Level = logging.INFO)
+        Level=logging.INFO,
+        Loggers=levels
+    )
 
-    async def main():
-        async with client:
-            
-            try:
-                log.Setup()
-                client.console_log("starting up the bot")
-                await client.start()
-            except ClientConnectionError:
-                _log.warning(ClientConnectionError)
-            finally:
-                client.console_log("shutting down the bot tasks")
-                client.console_log("closing down the bot")
-                await client.close()
-                log.Cleanup()
-                print(" done ")
+    async with client:
+        try:
+            client.logger.Setup()
+            _log.info("starting up the bot")
+            await client.start()
+        finally:
+            _log.warning("terminating bot tasks")
+            _log.warning("closing down the bot")
+            await client.close()
+            client.logger.Cleanup() # close the logger
 
+if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print(f"task shutdown")
+        _log.warning(f"task shutdown")
