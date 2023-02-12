@@ -2,14 +2,14 @@
 :copyright: (C) 2022-present 0xgreenapple
 :license: MIT.
 """
-import asyncio
 import logging
-from datetime import timedelta
 
 import discord
 from discord import app_commands, Interaction
 from discord.ext import commands
+
 from pepebot import pepebot
+from datetime import timedelta
 
 import typing
 from typing import Optional, Union, Literal
@@ -181,8 +181,9 @@ class setup_memme(commands.Cog):
     @setup.command(name="edit_meme_channel")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def setMemeChannelSettings(
-            self, interaction: Interaction, meme_channel: discord.TextChannel,
-            duration: Optional[str] = None, max_likes: Optional[int] = None,
+            self, interaction: Interaction,
+            meme_channel: discord.TextChannel,duration: Optional[str] = None,
+            max_likes: Optional[int] = None,
             next_gallery_channel: Optional[discord.TextChannel] = None
     ):
         """
@@ -202,35 +203,35 @@ class setup_memme(commands.Cog):
         """
         Response = interaction.response
         embed = discord.Embed(title=f"``command failed``")
-        channel_settings = await Get_channel_settings(bot=self.bot, Channel=meme_channel)
+        channel_settings = await Get_channel_settings(
+            bot=self.bot, Channel=meme_channel)
         # send a error message if given channel is not a meme channel
-        if channel_settings is None or not channel_settings["is_memechannel"] :
+        if channel_settings is None or not channel_settings["is_memechannel"]:
             embed.description = \
                 f">>> {self.bot.right} {meme_channel.mention} channel" \
                 f" is not a meme channel, pls run command ``/config " \
                 f"{meme_channel.name}`` to check if the channel is a " \
                 f"meme channel or ``/serverconfig`` to see list of " \
                 f"meme channels in the gild "
-            return await Response.send_message(embed=embed, ephemeral=True)
-
-        # set default vale to null only if duration given is 0
+            await Response.send_message(embed=embed, ephemeral=True)
+            return
         delta = 'NULL' if duration == '0' else duration
-        # parse string to timedelta value only
-        if delta and duration != '0':
+        if delta is not None and duration != '0':
             try:
                 delta = string_to_delta(duration)
-            except:
+            except Exception as error:
                 embed.description = \
                     f">>> {self.bot.right} the time ``{duration}`` is " \
                     f"invalid it must be in formate of" \
                     f"```1(h|hr|hour|hours) \n 1(m|min|minute) \n" \
                     f" 1(s|second|secs)``` "
-                return await Response.send_message(embed=embed, ephemeral=True)
-
+                await Response.send_message(embed=embed, ephemeral=True)
+                return
         args = {}
         if max_likes is not None:
             if max_likes <= 1:
-                embed.description = f">>> {self.bot.right} max likes must be greater than 1"
+                embed.description = f">>> {self.bot.right}" \
+                                    f" max likes must be greater than 1"
                 return await Response.send_message(embed=embed, ephemeral=True)
             elif max_likes > 1:
                 args["max_like"] = max_likes
@@ -238,16 +239,15 @@ class setup_memme(commands.Cog):
             args["voting_time"] = delta if delta != 'NULL' else None
         if next_gallery_channel:
             args["Nextlvl"] = next_gallery_channel.id
-
         await self.setChannelSettings(
             guild_id=interaction.guild.id, channel_id=interaction.channel_id, **args)
         embed.title = f"``updated config``"
         embed.description = f"""
-                >>> {self.bot.right} **channel**:{meme_channel.mention}
-                **maximum likes**: {max_likes}
-                **gallery**: {next_gallery_channel.mention if next_gallery_channel else "none"}
-                **time limit**: {GetRelativeTime(delta) if isinstance(delta,timedelta) else "none"}
-                """
+        >>> {self.bot.right} **channel**:{meme_channel.mention}
+        **maximum likes**: {max_likes}
+        **gallery**: {next_gallery_channel.mention if next_gallery_channel else "none"}
+        **time limit**: {GetRelativeTime(delta) if isinstance(delta,timedelta) else "none"}
+        """
         return await Response.send_message(embed=embed)
 
     @app_commands.checks.has_permissions(administrator=True)
@@ -270,13 +270,13 @@ class setup_memme(commands.Cog):
             await interaction.response.send_message(
                 embed=embed, ephemeral=True)
             return
-
         await self.setGuildSettings(
             guild_id=interaction.guild.id, MemeAdmin=role.id)
         embed.title = "``role Added``"
-        embed.description = f">>> {self.bot.right} now members with " \
-                            f"{role.mention} will be able to execute " \
-                            f"all economy commands "
+        embed.description = \
+            f">>> {self.bot.right} now members with " \
+            f"{role.mention} will be able to execute " \
+            f"all economy commands "
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
