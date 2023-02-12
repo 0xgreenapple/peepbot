@@ -138,24 +138,3 @@ $$ language plpgsql;
 CREATE OR REPLACE TRIGGER insert_user_inv_guild_id
 BEFORE INSERT ON peep.inventory
 FOR EACH ROW EXECUTE FUNCTION peep.check_user_inv_guild_ids();
-
-
-
-CREATE OR REPLACE FUNCTION peep.check_booster_guild_ids()
-RETURNS TRIGGER AS $$
-DECLARE
-check_parent_table Integer;
-BEGIN
-	SELECT Count(*) INTO check_parent_table FROM peep.Guilds
-	WHERE guild_id = NEW.guild_id;
-	IF check_parent_table = 0 THEN
-	INSERT INTO peep.Guilds(guild_id)
-	VALUES(NEW.guild_id);
-	END IF;
-	RETURN NEW;
-END;
-$$ language plpgsql;
-
-CREATE OR REPLACE TRIGGER insert_booster_guild_id
-BEFORE INSERT ON peep.booster
-FOR EACH ROW EXECUTE FUNCTION peep.check_booster_guild_ids();

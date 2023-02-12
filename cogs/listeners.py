@@ -13,7 +13,7 @@ import discord
 from discord import errors
 from discord.ext import commands
 from discord.ext.commands import BucketType, cooldown
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from pepebot import pepebot
 from handler.Context import Context
 from handler.pagination import SimplePages
@@ -31,138 +31,7 @@ class leaderboard(SimplePages):
         super().__init__(converted, per_page=per_page, ctx=ctx)
 
 
-async def handle_roles(bot: pepebot, message: discord.Message, reward_channel: int, user_limit: int, limits: list,
-                       roles: list):
-    print('i m here')
-    if reward_channel:
-        print('reward')
-
-        if reward_channel == message.channel.id:
-            print('hellooo')
-
-            await bot.db.execute(
-                """
-                INSERT INTO peep.msg(guild_id,channel_id,user_id,limit1)
-                VAlUES($1,$2,$3,$4)
-                ON CONFLICT(guild_id,channel_id,user_id) DO
-                UPDATE SET limit1 =  COALESCE(msg.limit1, 0) + $4 ;
-                """, message.guild.id, message.channel.id, message.author.id, 1
-            )
-            if limits:
-                print('limits')
-
-                user_role1 = None
-                user_role2 = None
-                user_role3 = None
-                if roles[0]:
-                    user_role1 = message.author.get_role(roles[0])
-                if roles[1]:
-                    user_role2 = message.author.get_role(roles[1])
-                if roles[2]:
-                    user_role3 = message.author.get_role(roles[2])
-
-                if limits[0] and user_limit >= limits[0]:
-                    print('adding')
-                    if not user_role1:
-                        if roles[0]:
-                            role1 = message.guild.get_role(roles[0])
-                            if role1:
-                                await message.author.add_roles(role1)
-                if limits[1] and user_limit >= limits[1]:
-                    print('adding1')
-
-                    if not user_role2:
-                        if roles[1]:
-                            role2 = message.guild.get_role(roles[1])
-                            if role2:
-                                await message.author.add_roles(role2)
-                if limits[2] and user_limit >= limits[2]:
-                    print('adding2')
-
-                    if not user_role3:
-                        if roles[2]:
-                            role3 = message.guild.get_role(roles[2])
-                            if role3:
-                                await message.author.add_roles(role3)
-
-
-async def handle_gallery(bot: pepebot, message: discord.Message, announcement_id: int, _is_gallery=False):
-    vote_time = await bot.db.fetchval(
-        """SELECT vote_time FROM peep.setup
-        WHERE guild_id=$1""", message.guild.id
-    )
-    vote_time = vote_time if vote_time else 18
-
-    reaction_count1 = await bot.db.fetchval(
-        """SELECT likes FROM peep.likes 
-        WHERE guild_id=$1 AND channel = $2""", message.guild.id, message.channel.id
-    )
-    reaction_count1 = reaction_count1 if reaction_count1 else 2
-
-    def check(reaction, user):
-        count = 0
-        reaction_count = 0
-        for reaction in message.reactions:
-            if reaction.emoji.id == 1008402662070427668:
-                reaction_count = reaction.count
-                break
-
-        return reaction_count >= reaction_count1
-
-    try:
-        reaction, user = await bot.wait_for('reaction_add', timeout=vote_time * 60,
-                                            check=check)
-    except asyncio.TimeoutError:
-        pass
-    else:
-
-        reaction_count = 0
-        for reaction in message.reactions:
-            if reaction.emoji.id == 1008402662070427668:
-                reaction_count = reaction.count
-                break
-        await bot.db.execute(
-            """
-                    INSERT INTO peep.leaderboard(user_id,guild_id,likes)
-                    VALUES($1,$2,$3)
-                    ON CONFLICT (guild_id,user_id) DO
-                    UPDATE SET likes = COALESCE(leaderboard.likes, 0) + $3 ;
-                    """, message.author.id, message.guild.id, reaction_count
-        )
-        channel = message.guild.get_channel(announcement_id)
-        if channel:
-            if len(message.attachments):
-                if message.attachments[0].content_type.startswith('image') or \
-                        message.attachments[0].content_type.startswith('video'):
-                    file = await message.attachments[0].to_file()
-                    await channel.send(f"by {message.author.mention}",
-                                       file=file)
-            elif len(message.embeds):
-                if message.embeds[0].type == 'image' or \
-                        message.embeds[0].type == 'video' or \
-                        message.embeds[0].type == 'gifv':
-                    a = message.embeds[0]
-                    session: aiohttp.ClientSession = bot.aiohttp_session
-                    e = await session.get(url=a.url)
-                    a = await e.read()
-
-                    if e.content_type.endswith('gif'):
-                        fileext = '.gif'
-                    else:
-                        fileext = '.png'
-                    if _is_gallery:
-                        await channel.send(
-                            content=message.content,
-                            file=discord.File(fp=io.BytesIO(a),
-                                              filename=f'{bot.user.name}{fileext}'))
-                    else:
-                        await channel.send(
-                            content=f"by {message.author.mention}",
-                            file=discord.File(fp=io.BytesIO(a),
-                                              filename=f'{bot.user.name}{fileext}'))
-
-
-async def GetAttachments(message: discord.Message, links: bool = False):
+def GetAttachments(message: discord.Message, links: bool = False):
     AllowedTypes = ("image", "video")
     attachments = message.attachments
     embeds = message.embeds
@@ -171,7 +40,6 @@ async def GetAttachments(message: discord.Message, links: bool = False):
         return
     Resolved_Attachments = []
     for image in attachments:
-        print(image.content_type)
         if image.content_type.startswith(AllowedTypes):
             Resolved_Attachments.append(image)
 
@@ -196,6 +64,10 @@ async def AddLikes(bot: pepebot, user: discord.Member):
     )
 
 
+async def removeLikes():
+    ...
+
+
 async def HandleThreadEvents():
     ...
 
@@ -207,12 +79,85 @@ class listeners(commands.Cog):
         self.Database = self.bot.Database
         self.cachedLists = {}
 
+    def cacheMemeMessage(
+            self, message: discord.Message, duration: timedelta,
+            maxLikes: int, next_Channel: int, author_id: int):
+
+        """ store memes related messages """
+        guild_cache = self.bot.cache.get_guild(message.guild.id)
+        if guild_cache is None:
+            self.bot.cache.set_guild(message.guild.id)
+            guild_cache = self.bot.cache.get_guild(message.guild.id)
+
+        guild_cache["memes"] = {}
+        message_obj = {
+            "message": message,
+            "WatchUntil": duration,
+            "author_id": author_id,
+            "nextLvl": next_Channel,
+            "maxLikes": maxLikes
+        }
+        guild_cache["memes"][message.id] = message_obj
+
+    def get_cached_message(self, guild_id, message_id):
+        """ return message from bot cache """
+        guild_cache = self.bot.cache.get(guild_id)
+        if guild_cache is None:
+            return None
+        memes = guild_cache.get("memes")
+        if memes is None:
+            return None
+        return memes.get(message_id)
+
+    async def add_likes(self, member_id, guild_id, like: int = 1):
+        await self.bot.Database.Insert(
+            member_id,
+            guild_id,
+            like,
+            table="peep.user_details",
+            columns="guild_id,user_id,likes",
+            values="$1,$2,$3",
+            on_Conflicts="(user_id,guild_id) "
+                         "DO UPDATE SET "
+                         "likes = COALESCE(user_details.likes, 0) + $3")
+
+    async def move_message_to(
+            self, channel: discord.TextChannel, message_obj: dict = None):
+
+        Message: discord.Message = message_obj["message"]
+        Attachment: discord.Attachment = GetAttachments(Message)[0]
+        AttachmentFile = await Attachment.to_file(
+            filename=Attachment.filename, use_cached=True)
+        Author = Message.guild.get_member(message_obj["author_id"])
+
+        message = await channel.send(
+            content=f"by {Author.mention}",
+            file=AttachmentFile
+        )
+
+        # delete old message object from the cache and append new one
+        self.bot.cache[Message.guild.id]["memes"].pop(Message.id)
+        channel_settings = await Get_channel_settings(
+            bot=self.bot, Channel=channel)
+        MaxLikeLimit = channel_settings["NextLvl"]
+        NextGallery = channel_settings["NextLvl"]
+        self.cacheMemeMessage(
+            message=message,
+            author_id=Author.id, duration=message_obj["WatchUntil"],
+            maxLikes=MaxLikeLimit, next_Channel=NextGallery)
+
     @commands.Cog.listener(name="on_message")
     async def AutoThreadCreate(self, message: discord.Message):
+        """
+        Called when a message is received,
+        Create threads on messages that contains attachments,
+        Only if Auto thread in the server settings is turned on.
+        """
         guild = message.guild
         user = message.author
         channel = message.channel
-        attachments = await GetAttachments(message=message)
+
+        attachments = GetAttachments(message=message)
         if user.bot:
             return
         if message.type != discord.MessageType.default:
@@ -222,12 +167,16 @@ class listeners(commands.Cog):
         if attachments is None or len(attachments) == 0:
             return
 
-        guild_settings = await Get_Guild_settings(bot=self.bot, guild=guild)
+        # get Guild settings and channel settings from the cache if available
+        # else database if guild settings or channel settings is None it will return
+        guild_settings, settings = await asyncio.gather(
+            Get_Guild_settings(bot=self.bot, guild_id=guild.id),
+            Get_channel_settings(bot=self.bot, Channel=channel)
+        )
+        if not guild_settings or not settings:
+            return
         isThreadListenerEnabled = guild_settings["thread_lstnr"]
         if not isThreadListenerEnabled:
-            return
-        settings = await Get_channel_settings(bot=self.bot, Channel=channel)
-        if not settings:
             return
         isThreadChannel = settings["is_threadchannel"]
         if not isThreadChannel:
@@ -238,13 +187,117 @@ class listeners(commands.Cog):
         threadMsg = settings['thread_msg'] if settings["thread_msg"] else \
             f"{MemeManagerRole.mention if MemeManagerRole else user.mention}" \
             f" make sure that the meme is original"
-
+        # create thread on message and send A message to thread
         thread = await channel.create_thread(
             name=threadName, message=message, auto_archive_duration=1440)
         view = thread_channel(user=user)
         thread_message = await thread.send(content=threadMsg, view=view)
         view.message = thread_message
         return
+
+    @commands.Cog.listener(name="on_raw_reaction_add")
+    async def WatchForReactions(self, reaction: discord.RawReactionActionEvent):
+        # get message channel and guild
+        Channel = self.bot.get_channel(reaction.channel_id)
+        Message = await Channel.fetch_message(reaction.message_id)
+        Guild = Channel.guild
+        Reactions = Message.reactions
+        Attachments = GetAttachments(message=Message)
+        if reaction.member.bot:
+            return
+        if reaction.emoji.id != 1008402662070427668:
+            return
+        if not Attachments or len(Attachments) == 0:
+            return
+        # check if Meme Listener in server is allowed
+        Guild_settings = await Get_Guild_settings(self.bot, Guild.id)
+        if Guild_settings is None:
+            return
+        isEnabled = Guild_settings.get("reaction_lstnr")
+        if not isEnabled:
+            return
+        # check if channel is a Meme channel
+        channel_settings = await Get_channel_settings(self.bot, Channel)
+        if not channel_settings:
+            return
+        isChannelAMemeChannel = channel_settings.get("is_memechannel")
+        if not isChannelAMemeChannel:
+            return
+
+        # add and get message from the cache
+        message_cache = self.get_cached_message(
+            guild_id=Guild.id, message_id=Message.id)
+        message_watch_duration = message_cache["WatchUntil"]
+        LikeLimit = message_cache["maxLikes"]
+        message_author = message_cache["author_id"]
+
+        if message_watch_duration is not None:
+            WatchMessageUntil = Message.created_at.utcnow() + message_cache["WatchUntil"]
+            Now = datetime.utcnow()
+            if WatchMessageUntil <= Now:
+                guild_cache = self.bot.cache.get_guild(guild_id=Guild.id)
+                guild_cache["memes"].pop(Message.id)
+                return
+        likes = 0
+        for reaction in Reactions:
+            if reaction.emoji.id == 1008402662070427668:
+                likes = reaction.count
+                break
+        if likes >= LikeLimit:
+            # TODO: move the message to next level
+            await self.move_message_to(channel=Channel, message_obj=message_cache)
+
+        await self.add_likes(
+            member_id=message_author, guild_id=Guild.id)
+
+    @commands.Cog.listener(name="on_message")
+    async def WatchForMemes(self, message: discord.Message):
+        """
+        Called when a message is received,
+        And react to message
+        """
+        guild = message.guild
+        user = message.author
+        channel = message.channel
+
+        attachments = GetAttachments(message=message)
+        if user.bot and user.id != self.bot.user.id:
+            return
+        if message.type != discord.MessageType.default:
+            return
+        if channel.type != discord.ChannelType.text:
+            return
+        if attachments is None or len(attachments) == 0:
+            return
+
+        guild_settings, settings = await asyncio.gather(
+            Get_Guild_settings(bot=self.bot, guild_id=guild.id),
+            Get_channel_settings(bot=self.bot, Channel=channel)
+        )
+        if not guild_settings or not settings:
+            return
+        IsMemesAllowed = guild_settings.get("reaction_lstnr")
+        if not IsMemesAllowed:
+            return
+        IsChannelAMemeChannel = settings.get("is_memechannel")
+        if not IsChannelAMemeChannel:
+            return
+
+        watchUntil = guild_settings.get("vote_time")
+        nextChannel = settings.get("NextLvl")
+        maxLikes = settings.get("max_like")
+        if watchUntil:
+            watchUntil = watchUntil
+        if message.author.id != self.bot.user.id:
+            self.cacheMemeMessage(
+                message=message, duration=watchUntil, maxLikes=maxLikes,
+                next_Channel=nextChannel, author_id=message.author.id)
+        like = message.add_reaction(self.bot.emoji.like)
+        dislike = message.add_reaction(self.bot.emoji.dislike)
+        self.bot.loop.create_task(like)
+        self.bot.loop.create_task(dislike)
+        return
+
 
 async def setup(bot: pepebot) -> None:
     await bot.add_cog(
