@@ -7,9 +7,9 @@ starter of the peep bot for discord py
 """
 
 __title__ = 'Peep-bot'
-__author__ = 'xgreenapple'
+__author__ = '0xgreenapple'
 __copyright__ = 'MIT Copyright xgreenapple'
-__version__ = '0.0.2a'
+__version__ = '2.0.0'
 
 import logging
 import os
@@ -18,8 +18,7 @@ import asyncio
 import datetime
 import typing
 import aiohttp
-import aioredis
-import psutil
+import asyncpg
 
 import discord
 from discord.ext import commands, tasks
@@ -27,21 +26,20 @@ from discord.ext import commands, tasks
 from collections import Counter
 from itertools import cycle
 from platform import python_version
-from typing import Optional,TYPE_CHECKING
+from typing import Optional
 
 from handler import Context
-from handler.utils import emojis, Colour
+from handler.utils import Emojis, Colour
 from handler.logger import logger
 from handler.tasks import CheckEconomyItems
-from handler.cache import Guild_cache
+from handler.guild_cache import guild_cache
 from handler.database import database
 
-log = logging.getLogger(__name__)
+_log = logging.getLogger(__name__)
 
 
-class pepebot(commands.Bot):
-    """peep-bot v0.0.2a Interface
-    """
+class PepeBot(commands.Bot):
+    """PepeBot 2.0 interface"""
     user: discord.ClientUser
     bot_app_info: discord.AppInfo
     owner: 888058231094665266
@@ -52,6 +50,7 @@ class pepebot(commands.Bot):
         self.ready = False
         self.statues = cycle(
             ["peep"])
+        self.start_time: time = None
         super().__init__(
             command_prefix=self.get_command_prefix,
             case_insensitive=True,
@@ -64,22 +63,23 @@ class pepebot(commands.Bot):
                 message_content=True,
                 reactions=True
             ),
-            application_id=app_ID,
+            application_id=APP_ID,
             help_command=None,
         )
 
         # variables
-        self.version = "0.0.1a"
+        self.version = "2.0.0"
         self.message_prefix_s = "peep bot"
-        self.emoji = emojis()
+        self.emoji: Optional[Emojis] = None
         self.colors = Colour()
         self.spam_count = Counter()
-        self.guild_cache: Guild_cache = Guild_cache()
+        self.cache: guild_cache = guild_cache()
         self._app_info: Optional[discord.AppInfo] = None
         self.taskrunner: Optional[CheckEconomyItems] = None
         self.owner_id = 888058231094665266
         self.logger: typing.Optional[logger] = None
         self.online_time = datetime.datetime.now(datetime.timezone.utc)
+        self.aiohttp_session: Optional[aiohttp.ClientSession] = None
         self.spam_cooldown = commands.CooldownMapping.from_cooldown(
             5.0, 6.0, commands.BucketType.user)
         self.user_agent = (
@@ -89,8 +89,8 @@ class pepebot(commands.Bot):
             f"discord.py/{discord.__version__}"
         )
         # database variables
-        self.db = self.database = self.database_connection_pool = None
-        self.Database: Optional[database] = None
+        self.db = self.pool = self.database_connection_pool = None
+        self.database: Optional[database] = None
         self.connected_to_database = asyncio.Event()
         self.connected_to_database.set()
 
@@ -103,34 +103,24 @@ class pepebot(commands.Bot):
             return getattr(self.emoji, item)
         elif hasattr(self.colors, item):
             return getattr(self.colors, item)
-        raise AttributeError(f"'{item}' attribute in {self.__class__.__name__} class does not exists")
+        raise AttributeError(
+            f"'{item}' attribute in {self.__class__.__name__}"
+            f" class does not exists")
 
-    # initialize the bot, connect to the websocket
+    # initialize the bot, called when bot logged to discord
     async def setup_hook(self) -> None:
-        # aiohttp client session we will use it later
+        _log.info("setting up hook")
+        # initialise new client session
         self.aiohttp_session = aiohttp.ClientSession(loop=self.loop)
-        self.console_log("session started")
         # initialize the bot app info
         self.bot_app_info = await self.application_info()
         self.owner_id = self.bot_app_info.owner.id
         self.console_log("setting up database >")
-        # await self.initialize_database()
-        self.Database = database(
-            user=USER,
-            main_database=DBNAME,
-            Password=password,
-            Host=host,
-        )
-        await self.Database.initialize()
-        self.db = self.database = self.database_connection_pool = self.Database.database
-        await self.initialize_database()
-        # connect to redis server
-
-        self.console_log("database setup done")
+        # initialise database
+        await self.initialise_database()
         # bot startup task
         self.loop.create_task(
-            self.startup_tasks(), name="Bot startup tasks"
-        )
+            self.startup_tasks(), name="Bot startup tasks")
         # the list of cogs that will being initialize
         COGS = ['duel',
                 'setup',
@@ -146,85 +136,132 @@ class pepebot(commands.Bot):
             await self.load_extension(f"cogs.{cog}")
             self.console_log(f"{cog} loaded ")
         self.console_log("setup hook complete")
-        log.info("handling the timer")
         await self.tree.sync()
 
     async def on_ready(self):
         """ Do startup task when bot successfully connects to database """
-        
-        self.console_log(f"is shard rate limited? :{self.is_ws_ratelimited()}")
-        # add uptime to the bot
-        if not hasattr(self, 'uptime'):
-            self.startTime = time.time()
-        # set self.ready to true and sent the console message 
-        if not self.ready:
-            self.ready = True
-            self.console_log(f"bot is logged as {self.user}")
-        else:
-            self.console_log(f'{self.user} bot reconnected.')
-
-    async def startup_tasks(self):
-        """ startup tasks """
-        self.taskrunner = CheckEconomyItems(self)
 
         await self.wait_until_ready()
         # starts bot status loop
         await self.change_status.start()
-        # initialize database event manager
+        self.console_log(
+            f"is shard rate limited? :{self.is_ws_ratelimited()}")
+        # add uptime to the bot
+        self.start_time = time.time()
 
+        # set self.ready to true and sent the console message 
+        if not self.ready:
+            self.ready = True
+            self.console_log(
+                f"bot is logged as {self.user}, with latency: {self.latency}")
+        else:
+            _log.info(f'{self.user} bot reconnected.')
+
+    async def startup_tasks(self):
+        """ startup tasks """
+        self.taskrunner = CheckEconomyItems(self)
+        _log.info("handling timers")
+        self.emoji = Emojis(self)
+        await self.emoji.initialise()
+
+    async def initialise_database(self):
+        """ make a database connection and run startup query"""
+        self.database = database(
+            bot=self,
+            user=USER,
+            main_database=DBNAME,
+            Password=DB_PASSWORD,
+            Host=HOST,
+        )
+        self.database.startup_task = self.database_startup_tasks
+        await self.database.initialize()
+        self.db = self.pool = self.database_connection_pool \
+            = self.database.database
+        _log.info("database initialised")
     # Setup every tables :)
-    async def initialize_database(self):
-        await self.Database.CreateTable(
+
+    async def database_startup_tasks(self):
+        await self.database.CreateTable(
             table_name="peep.Guilds",
             columns="""
             guild_id              BIGINT NOT NULL,   
             PRIMARY KEY          (guild_id)
             """
         )
-        await self.Database.CreateTable(
+        await self.database.CreateTable(
             table_name="peep.Users",
             columns="""
             user_id      BIGINT NOT NULL,
             guild_id     BIGINT NOT NULL,
-            FOREIGN KEY (guild_id) REFERENCES peep.Guilds(guild_id),
+            FOREIGN KEY (guild_id) REFERENCES
+            peep.Guilds(guild_id),
             PRIMARY KEY (guild_id,user_id)
             """
         )
-        await self.Database.CreateTable(
+        await self.database.CreateTable(
             table_name="peep.Channels",
             columns="""
             channel_id           BIGINT NOT NULL,
-            guild_id             BIGINT,
-            is_memeChannel       boolean DEFAULT FALSE,
-            is_threadChannel     boolean DEFAULT FALSE,
-            is_deadChat          boolean DEFAULT FALSE,
-            is_ocChannel         boolean DEFAULT FALSE,
-            is_voteChannel       boolean DEFAULT FALSE,
-            max_like             INT DEFAULT 5,
-            voting_time          INTERVAL DEFAULT NULL,
-            thread_msg           TEXT,
+            guild_id             BIGINT NOT NULL,
             PRIMARY KEY          (guild_id,channel_id),
-            FOREIGN KEY (guild_id) REFERENCES peep.Guilds(guild_id)
+            FOREIGN KEY (guild_id) REFERENCES 
+            peep.Guilds(guild_id)
             """
         )
-
+        await self.database.CreateTable(
+            table_name="peep.Gallery",
+            columns=
+            """
+            channel_id           BIGINT NOT NULL,
+            guild_id             BIGINT,
+            FOREIGN KEY (channel_id,guild_id) REFERENCES 
+            peep.Channels(channel_id,guild_id)
+            """
+        )
         # store the settings stats
-        await self.Database.CreateTable(
+        await self.database.CreateTable(
             table_name="peep.guild_settings",
             columns=
             """
             guild_id           BIGINT UNIQUE,
+            prefix             varchar(20),
             vote               BIGINT,
             reaction_lstnr     BOOLEAN DEFAULT FALSE,
             thread_lstnr       BOOLEAN DEFAULT FALSE,
-            oc_lstnr           BOLEAN DEFAULT FALSE,
-            vote_time          BIGINT DEFAULT 60,
+            oc_lstnr           BOOLEAN DEFAULT FALSE,
+            vote_time          INTERVAL DEFAULT '1 hour',
+            shoplog            BIGINT,
             MemeAdmin          BIGINT,
             customization_time BIGINT DEFAULT 5,
-            FOREIGN KEY (guild_id) REFERENCES peep.Guilds(guild_id)
+            economy            BOOLEAN DEFAULT FALSE,
+            FOREIGN KEY (guild_id) REFERENCES
+            peep.Guilds(guild_id)
             """
         )
-        await self.Database.CreateTable(
+        await self.database.CreateTable(
+            table_name="peep.channel_settings",
+            columns=
+            f"""
+            guild_id             BIGINT NOT NULL,
+            channel_id           BIGINT NOT NULL,
+            like_emoji           varchar(256),
+            dislike_emoji        varchar(256),
+            is_memeChannel       boolean DEFAULT FALSE,
+            is_threadChannel     boolean DEFAULT FALSE,
+            is_deadChat          boolean DEFAULT FALSE,
+            is_Gallery           boolean DEFAULT FALSE,
+            is_ocChannel         boolean DEFAULT FALSE,
+            is_voteChannel       boolean DEFAULT FALSE,
+            NextLvl              BIGINT,
+            max_like             INT DEFAULT 5,
+            voting_time          INTERVAL DEFAULT NULL,
+            thread_msg           varchar(500),
+            UNIQUE               (guild_id,channel_id),
+            FOREIGN KEY (guild_id) REFERENCES
+            peep.Guilds(guild_id) ON DELETE CASCADE
+            """
+        )
+        await self.database.CreateTable(
             table_name="peep.user_details",
             columns=
             """
@@ -232,61 +269,99 @@ class pepebot(commands.Bot):
             user_id      BIGINT NOT NULL,
             likes        integer DEFAULT 0,
             points       FLOAT DEFAULT 0,
-            FOREIGN KEY (user_id,guild_id) REFERENCES peep.Users(user_id,guild_id),
+            FOREIGN KEY (user_id,guild_id) REFERENCES
+            peep.Users(user_id,guild_id),
             UNIQUE      (guild_id,user_id)
             """
         )
 
         # manage shop items
-        await self.Database.CreateTable(
+        await self.database.CreateTable(
             table_name="peep.shop",
             columns=
             """
-            items              TEXT,
-            cost               INT NOT NULL,
-            emoji              TEXT,
+            guild_id           BIGINT NOT NULL,
+            items              varchar(256),
+            cost               FLOAT NOT NULL,
+            emoji              varchar(256),
+            expired            INTERVAL,
+            FOREIGN KEY (guild_id) REFERENCES 
+            peep.Guilds(guild_id) ON DELETE CASCADE,
             PRIMARY KEY		   (items)
             """
         )
         # user Inventory
-        await self.Database.CreateTable(
+        await self.database.CreateTable(
             table_name="peep.inventory",
             columns=
             """
             guild_id               BIGINT NOT NULL,
             user_id                BIGINT NOT NULL,
-            items                  TEXT UNIQUE,
+            items                  varchar(256) UNIQUE,
             expired                TIMESTAMP,
             FOREIGN KEY (items)    REFERENCES peep.shop(items)
             ON DELETE CASCADE ON   UPDATE CASCADE,
-            FOREIGN KEY (user_id,guild_id)  REFERENCES peep.Users(user_id,guild_id),
-            UNIQUE                 (user_id,guild_id)
+            FOREIGN KEY (user_id,guild_id)  
+            REFERENCES peep.Users(user_id,guild_id)
             """
         )
-        await self.Database.CreateTable(
+        await self.database.CreateTable(
             table_name="peep.booster",
             columns=
             """
             guild_id      BIGINT UNIQUE,
-            item_name     TEXT UNIQUE,
+            item_name     varchar(256),
             threshold     FLOAT,
-            expired       INTERVAL DEFAULT NULL,
-            PRIMARY KEY	  (guild_id),
-            FOREIGN KEY (guild_id) REFERENCES peep.Guilds(guild_id)
+            FOREIGN KEY (item_name) REFERENCES 
+            peep.Shop(items) ON UPDATE CASCADE
+            ON DELETE CASCADE,
+            FOREIGN KEY (guild_id) REFERENCES
+             peep.Guilds(guild_id) ON DELETE CASCADE
             """
         )
+        await self.database.CreateTable(
+            table_name="peep.shoplog",
+            columns=
+            """
+            id           SERIAL PRIMARY KEY,
+            guild_id     BIGINT NOT NULL,
+            user_id      BIGINT NOT NULL,
+            item_name    varchar(256),
+            cost         FLOAT,
+            expired_on   INTERVAL,
+            purchased_at TIMESTAMP DEFAULT NOW(),
+            FOREIGN KEY  (user_id,guild_id) REFERENCES
+            peep.Users(user_id,guild_id)
+            """
+        )
+        await self.database.CreateTable(
+            table_name="peep.rolerewards",
+            columns=
+            """
+            guild_id          BIGINT NOT NULL,
+            likes             integer NOT NULL,
+            role_id           BIGINT,
+            FOREIGN KEY (guild_id) REFERENCES
+            peep.Guilds(guild_id) ON DELETE CASCADE,
+            UNIQUE            (guild_id,likes)
+            """
+        )
+        with open(file="botconfig/database/triggers.sql", mode="r") as triggers:
+            await self.database.db.execute(triggers.read())
 
     def console_log(self, message):
-        """prints to console"""
+        """ prints to console """
         if self.logger:
-            self.logger.write(f"{self.user} > {message}")
-        else:
-            print(f"[{datetime.datetime.now().strftime(r'%D %I:%M %p')}] > {self.user} > {message}")
+            return self.logger.out(message=f"{self.user} > {message} \n")
+        print(f"[{datetime.datetime.now().strftime(r'%D %I:%M %p')}]"
+              f" > {self.user} > {message}")
 
     @staticmethod
     async def get_command_prefix(bot, message: discord.Message):
         """ Returns bot command prefix """
         prefixes = "%"
+        print(bot)
+        print(message)
         return prefixes if prefixes else "%"
 
     @property
@@ -312,25 +387,16 @@ class pepebot(commands.Bot):
                 name=next(self.statues))
         )
 
-    """ Events """
-
-    # do something on guild Join
-    async def on_guild_join(self, guild):
-        log.warning("joined guild : ", guild)
-
-    async def on_guild_remove(self, guild):
-        log.warning("left a guild : ", guild)
-
     async def start(self) -> None:
         """ super method to run the bot"""
-        await super().start(token, reconnect=True)
+        await super().start(TOKEN, reconnect=True)
 
     async def close(self) -> None:
         """ do closeup task when bot closes """
         try:
             self.console_log(f"closing bot session")
             await self.aiohttp_session.close()
-            await self.Database.Cleanup()
+            await self.database.Cleanup()
         except Exception as e:
             print(e)
         try:
@@ -339,37 +405,45 @@ class pepebot(commands.Bot):
         except Exception as e:
             print(e)
 
+    """ Events """
+
+    # do something on guild Join
+    async def on_guild_join(self, guild):
+        _log.info("joined guild : ", guild)
+
+    async def on_guild_remove(self, guild):
+        _log.info("left a guild : ", guild)
+
     async def on_resumed(self):
         """print when client resumed"""
-        self.console_log(f"{self.user} [resumed]")
+        _log.info(f"{self.user} [resumed] with latency:{self.latency}")
 
     async def on_connect(self):
         """print when client connected to discord"""
-        self.console_log(f"{self.user} is connected successfully")
+        _log.info(
+            f"{self.user} is connected successfully! latency: {self.latency}")
 
     async def on_disconnect(self):
         """print when client disconnected to discord"""
-        self.console_log(f"{self.user} is disconnected")
+        self.console_log(
+            f"{self.user} is disconnected! latency: {self.latency}")
 
-    async def get_context(self, message, /, *, cls=Context.Context) -> Context.Context:
+    async def get_context(
+            self, message, /, *, cls=Context.Context) -> Context.Context:
         """ overwrite the new bot context"""
         ctx = await super().get_context(message, cls=cls)
         return ctx
 
     async def on_message(self, message: discord.Message):
-        message.content.startswith("$")
         """ called when the message is received process the commands"""
-        process = psutil.Process(os.getpid())
-        print(process.memory_info().rss / 1024 ** 2)
         await self.process_commands(message)
 
 
 # get environment variables
-token = os.environ.get('BETATOKEN')
-app_ID = os.environ.get('APPLICATION_ID')
-password = os.environ.get('DBPASSWORD')
-redis_pass = os.environ.get("REDISPASS")
-host = os.environ.get('DBHOST')
+TOKEN = os.environ.get('BETATOKEN')
+APP_ID = os.environ.get('APPLICATION_ID')
+DB_PASSWORD = os.environ.get('DBPASSWORD')
+HOST = os.environ.get('DBHOST')
 USER = os.environ.get('DBUSER')
 DBNAME = os.environ.get('DBNAME')
 

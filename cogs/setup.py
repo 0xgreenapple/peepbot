@@ -1,14 +1,18 @@
 """
-:copyright: (C) 2022-present 0xgreenapple
-:license: MIT.
+:Author: @0xgreenapple(xgreenapple)
+:Licence: MIT
+:Copyright: 2022-present @0xgreenapple
 """
 import logging
+import re
+import unicodedata
 
 import discord
 from discord import app_commands, Interaction
 from discord.ext import commands
 
 from pepebot import pepebot
+
 from datetime import timedelta
 
 import typing
@@ -18,20 +22,21 @@ from handler.utils import (
     string_to_delta,
     getPlaceholders,
     getKeyPair,
-    KeyStr, GetRelativeTime
-)
+    toStringList, GetRelativeTime)
 from handler.database import (
     reinitialisedChannel_settings,
     reinitialisedGuild_settings,
     Get_channel_settings,
-    Get_Guild_settings
-)
-
+    Get_Guild_settings)
 
 _log = logging.getLogger(__name__)
 
 
-class setup_memme(commands.Cog):
+async def setup(bot: pepebot) -> None:
+    await bot.add_cog(configuration(bot))
+
+
+class configuration(commands.Cog):
     def __init__(self, bot: pepebot) -> None:
         self.bot = bot
         self.Database = bot.Database
@@ -40,52 +45,73 @@ class setup_memme(commands.Cog):
         """
         Edit channel settings that is stored in the database
         """
-        options_key = list(options.keys())
-        options_key.insert(0, "guild_id")
-        options_key.insert(1, "channel_id")
-        keys_str = KeyStr(options_key)
-        placeholders = getPlaceholders(len(options_key))
-        options_key.remove("guild_id")
-        options_key.remove("channel_id")
-        key_value_str = getKeyPair(options_key, 3)
+        options_names = list(options.keys())
+        options_names.insert(0, "guild_id")
+        options_names.insert(1, "channel_id")
+        names_str_list = toStringList(options_names)  # value1, value2,...
+        placeholders_str = getPlaceholders(len(options_names))  # "$1,$2,$3,...
+        options_names.remove("guild_id")
+        options_names.remove("channel_id")
+        key_value_str = getKeyPair(options_names, 3)
         values = list(options.values())
         values.insert(0, guild_id)
         values.insert(1, channel_id)
+
         await self.Database.Insert(
             *values,
-            table="peep.Channels",
-            columns=keys_str,
-            values=placeholders,
-            on_Conflicts="(guild_id,channel_id) DO UPDATE SET "
-                         f"{key_value_str}")
-        self.bot.loop.create_task(reinitialisedChannel_settings(
+            table="peep.channel_settings",
+            columns=names_str_list,
+            values=placeholders_str,
+            on_Conflicts=
+            "(guild_id,channel_id) DO UPDATE SET "
+            f"{key_value_str}")
+        # insert new settings to the guild cache,
+        cache_new_settings = reinitialisedChannel_settings(
             bot=self.bot, channel_id=channel_id, guild_id=guild_id)
-        )
+        self.bot.loop.create_task(cache_new_settings)
 
     async def setGuildSettings(self, guild_id, **options):
         """ change guild settings from the database"""
-        keys = list(options.keys())
-        keys.insert(0, "guild_id")
-        keys_str = KeyStr(keys)
-        placeholders = getPlaceholders(len(keys))
+        options_names = list(options.keys())
+        options_names.insert(0, "guild_id")
+        names_str_list = toStringList(options_names)  # value1, value2, ...
+        placeholders = getPlaceholders(len(options_names))  # $1, $2, $3, ...
         values = list(options.values())
         values.insert(0, guild_id)
-        keys.remove("guild_id")
-        key_value_str = getKeyPair(keys,2)
+        options_names.remove("guild_id")
+        key_value_str = getKeyPair(options_names, 2)
         await self.bot.Database.Insert(
             *values,
             table="peep.guild_settings",
-            columns=f"{keys_str}",
+            columns=f"{names_str_list}",
             values=placeholders,
-            on_Conflicts="(guild_id) DO UPDATE SET "
-                         f"{key_value_str}")
-        cacheGuildSettings = reinitialisedGuild_settings(
+            on_Conflicts=
+            "(guild_id) DO UPDATE SET "
+            f"{key_value_str}")
+        cache_new_settings = reinitialisedGuild_settings(
             bot=self.bot, guild_id=guild_id)
-        self.bot.loop.create_task(cacheGuildSettings)
+        self.bot.loop.create_task(cache_new_settings)
 
+    def getValidEmojiString(self, string: str) -> Optional[str]:
+        custom = string.replace(" ", "")
+        firstEmoji = custom[0]
+        dataType = unicodedata.category(firstEmoji)
+        # it is a default emoji
+        if dataType == "So":
+            emoji = firstEmoji
+        else:
+            # check if given emoji is custom emoji
+            emoji_id = self.bot.emoji.extractEmojiId(custom)
+            custom_emoji = None
+            if emoji_id:
+                custom_emoji = self.bot.get_emoji(int(emoji_id))
+            if custom_emoji is None or not custom_emoji.is_usable():
+                return None
+            emoji = custom_emoji
+        return emoji
     setup = app_commands.Group(
         name='setup',
-        description='setup commands for you',
+        description='some configuration commands related to memes',
         guild_only=True,
         default_permissions=discord.Permissions(administrator=True)
     )
@@ -98,7 +124,7 @@ class setup_memme(commands.Cog):
                             "Oc Listener", 'economy'],
             turn: Literal['on', 'off']):
         """
-         edit specific guild settings.
+         configuration commands related to server.
 
         Parameters
         ----------
@@ -147,7 +173,7 @@ class setup_memme(commands.Cog):
         turn:
             turn on or off setting
         """
-        embed = discord.Embed(title="**updated Config**")
+        embed = discord.Embed(title="``updated Config``")
         permission = channel.permissions_for(interaction.guild.me)
 
         bot_required_permissions = [
@@ -182,7 +208,7 @@ class setup_memme(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def setMemeChannelSettings(
             self, interaction: Interaction,
-            meme_channel: discord.TextChannel,duration: Optional[str] = None,
+            meme_channel: discord.TextChannel, duration: Optional[str] = None,
             max_likes: Optional[int] = None,
             next_gallery_channel: Optional[discord.TextChannel] = None
     ):
@@ -215,10 +241,10 @@ class setup_memme(commands.Cog):
                 f"meme channels in the gild "
             await Response.send_message(embed=embed, ephemeral=True)
             return
-        delta = 'NULL' if duration == '0' else duration
-        if delta is not None and duration != '0':
+        delta_time = 'NULL' if duration == '0' else duration
+        if delta_time is not None and duration != '0':
             try:
-                delta = string_to_delta(duration)
+                delta_time = string_to_delta(duration)
             except Exception as error:
                 embed.description = \
                     f">>> {self.bot.right} the time ``{duration}`` is " \
@@ -226,34 +252,42 @@ class setup_memme(commands.Cog):
                     f"```1(h|hr|hour|hours) \n 1(m|min|minute) \n" \
                     f" 1(s|second|secs)``` "
                 await Response.send_message(embed=embed, ephemeral=True)
+                _log.error(error)
                 return
         args = {}
         if max_likes is not None:
             if max_likes <= 1:
                 embed.description = f">>> {self.bot.right}" \
                                     f" max likes must be greater than 1"
-                return await Response.send_message(embed=embed, ephemeral=True)
+                await Response.send_message(embed=embed, ephemeral=True)
+                return
             elif max_likes > 1:
                 args["max_like"] = max_likes
-        if delta is not None:
-            args["voting_time"] = delta if delta != 'NULL' else None
+
+        if delta_time is not None:
+            args["voting_time"] = delta_time if delta_time != 'NULL' else None
         if next_gallery_channel:
             args["Nextlvl"] = next_gallery_channel.id
+
         await self.setChannelSettings(
-            guild_id=interaction.guild.id, channel_id=interaction.channel_id, **args)
+            interaction.guild_id, interaction.channel_id, **args)
+
         embed.title = f"``updated config``"
+        isDeltaTime = isinstance(delta_time, timedelta)
+        humanRelativeTime = GetRelativeTime(delta_time) if isDeltaTime else "none"
         embed.description = f"""
         >>> {self.bot.right} **channel**:{meme_channel.mention}
         **maximum likes**: {max_likes}
         **gallery**: {next_gallery_channel.mention if next_gallery_channel else "none"}
-        **time limit**: {GetRelativeTime(delta) if isinstance(delta,timedelta) else "none"}
+        **time limit**: {humanRelativeTime}
         """
         return await Response.send_message(embed=embed)
 
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.checks.bot_has_permissions(manage_roles=True)
     @setup.command(name="meme_admin_role")
-    async def addMemeAdminRole(self, interaction: Interaction, role: discord.Role):
+    async def addMemeAdminRole(self, interaction: Interaction, role: discord.Role,
+                               remove: Literal['true']):
         """
         add A role to manage economy related commands.
 
@@ -279,7 +313,90 @@ class setup_memme(commands.Cog):
             f"all economy commands "
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    @app_commands.checks.has_permissions(administrator=True)
+    @setup.command(name="like")
+    async def setupLikeEmoji(
+            self, interaction: Interaction, custom_emoji: str = None,
+            setdefault: Literal['true'] = None, remove: Literal['true'] = None):
+        """
+        settings related bot reactions
 
-async def setup(bot: pepebot) -> None:
-    await bot.add_cog(
-        setup_memme(bot))
+        Parameters
+        ----------
+        custom_emoji:
+            specify the emoji you want the bot to react with
+        setdefault:
+            change the reaction emoji to default one that bot use
+        remove:
+            stop the bot to react like emoji on memes
+        """
+        embed = discord.Embed(title="``command failed``")
+        emoji = ""
+        if not any([custom_emoji, setup(), remove]):
+            embed.description = f">>> {self.bot.emoji.right} " \
+                                f"you must specify at least one setting"
+            await interaction.response.send_message(embed=embed)
+            return
+        if custom_emoji is not None:
+            emoji = self.getValidEmojiString(string=custom_emoji)
+            if emoji is None:
+                embed.description = f">>> {self.bot.emoji.right}" \
+                                    f"given emoji is not a valid emoji :``{custom_emoji}``"
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+        elif setdefault is not None:
+            emoji = self.bot.emoji.like
+        elif remove is not None:
+            emoji = '0'
+        await self.setChannelSettings(
+            guild_id=interaction.guild_id, channel_id=interaction.channel_id,
+            like_emoji=str(emoji))
+        embed.title = "``updated config``"
+        embed.description = f"now bot will react to {emoji}"
+        if emoji == '0':
+            embed.description = f"now bot will not able to like messages"
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.checks.has_permissions(administrator=True)
+    @setup.command(name="dislike")
+    async def setupLikeEmoji(
+            self, interaction: Interaction, custom_emoji: str = None,
+            setdefault: Literal['true'] = None, remove: Literal['true'] = None):
+        """
+        settings related bot reactions
+
+        Parameters
+        ----------
+        custom_emoji:
+            specify the emoji you want the bot to react with
+        setdefault:
+            change the reaction emoji to default one that bot use
+        remove:
+            stop the bot to react like emoji on memes
+        """
+        embed = discord.Embed(title="``command failed``")
+        emoji = ""
+        if not any([custom_emoji, setdefault, remove]):
+            embed.description = f">>> {self.bot.emoji.right} " \
+                                f"you must specify at least one setting"
+            await interaction.response.send_message(embed=embed)
+            return
+        if custom_emoji is not None:
+            emoji = self.getValidEmojiString(string=custom_emoji)
+            if emoji is None:
+                embed.description = f">>> {self.bot.emoji.right}" \
+                                    f"given emoji is not a valid emoji :``{custom_emoji}``"
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+        elif setdefault is not None:
+            emoji = self.bot.emoji.like
+        elif remove is not None:
+            emoji = '0'
+        await self.setChannelSettings(
+            guild_id=interaction.guild_id, channel_id=interaction.channel_id,
+            dislike_emoji=str(emoji))
+        embed.title = "``updated config``"
+        embed.description = f"now bot will react to {emoji}"
+        if emoji == '0':
+            embed.description = f"now bot will not able to dislike messages"
+        await interaction.response.send_message(embed=embed, ephemeral=True)
