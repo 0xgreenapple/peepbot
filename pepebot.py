@@ -30,12 +30,12 @@ from typing import Optional
 
 from handler import Context
 from handler.utils import Emojis, Colour
-from handler.logger import logger
+from handler.logger import Logger
 from handler.tasks import CheckEconomyItems
 from handler.guild_cache import guild_cache
-from handler.database import database
+from handler.database import Database
 
-_log = logging.getLogger(__name__)
+_log = logging.getLogger("pepebot")
 
 
 class PepeBot(commands.Bot):
@@ -66,7 +66,6 @@ class PepeBot(commands.Bot):
             application_id=APP_ID,
             help_command=None,
         )
-
         # variables
         self.version = "2.0.0"
         self.message_prefix_s = "peep bot"
@@ -77,7 +76,7 @@ class PepeBot(commands.Bot):
         self._app_info: Optional[discord.AppInfo] = None
         self.taskrunner: Optional[CheckEconomyItems] = None
         self.owner_id = 888058231094665266
-        self.logger: typing.Optional[logger] = None
+        self.logger: typing.Optional[Logger] = None
         self.online_time = datetime.datetime.now(datetime.timezone.utc)
         self.aiohttp_session: Optional[aiohttp.ClientSession] = None
         self.spam_cooldown = commands.CooldownMapping.from_cooldown(
@@ -90,7 +89,7 @@ class PepeBot(commands.Bot):
         )
         # database variables
         self.db = self.pool = self.database_connection_pool = None
-        self.database: Optional[database] = None
+        self.database: Optional[Database] = None
         self.connected_to_database = asyncio.Event()
         self.connected_to_database.set()
 
@@ -166,12 +165,12 @@ class PepeBot(commands.Bot):
 
     async def initialise_database(self):
         """ make a database connection and run startup query"""
-        self.database = database(
+        self.database = Database(
             bot=self,
             user=USER,
             main_database=DBNAME,
-            Password=DB_PASSWORD,
-            Host=HOST,
+            password=DB_PASSWORD,
+            host=HOST,
         )
         self.database.startup_task = self.database_startup_tasks
         await self.database.initialize()
@@ -181,14 +180,14 @@ class PepeBot(commands.Bot):
     # Setup every tables :)
 
     async def database_startup_tasks(self):
-        await self.database.CreateTable(
+        await self.database.create_table(
             table_name="peep.Guilds",
             columns="""
             guild_id              BIGINT NOT NULL,   
             PRIMARY KEY          (guild_id)
             """
         )
-        await self.database.CreateTable(
+        await self.database.create_table(
             table_name="peep.Users",
             columns="""
             user_id      BIGINT NOT NULL,
@@ -198,7 +197,7 @@ class PepeBot(commands.Bot):
             PRIMARY KEY (guild_id,user_id)
             """
         )
-        await self.database.CreateTable(
+        await self.database.create_table(
             table_name="peep.Channels",
             columns="""
             channel_id           BIGINT NOT NULL,
@@ -208,7 +207,7 @@ class PepeBot(commands.Bot):
             peep.Guilds(guild_id)
             """
         )
-        await self.database.CreateTable(
+        await self.database.create_table(
             table_name="peep.Gallery",
             columns=
             """
@@ -219,7 +218,7 @@ class PepeBot(commands.Bot):
             """
         )
         # store the settings stats
-        await self.database.CreateTable(
+        await self.database.create_table(
             table_name="peep.guild_settings",
             columns=
             """
@@ -238,7 +237,7 @@ class PepeBot(commands.Bot):
             peep.Guilds(guild_id)
             """
         )
-        await self.database.CreateTable(
+        await self.database.create_table(
             table_name="peep.channel_settings",
             columns=
             f"""
@@ -261,7 +260,7 @@ class PepeBot(commands.Bot):
             peep.Guilds(guild_id) ON DELETE CASCADE
             """
         )
-        await self.database.CreateTable(
+        await self.database.create_table(
             table_name="peep.user_details",
             columns=
             """
@@ -276,7 +275,7 @@ class PepeBot(commands.Bot):
         )
 
         # manage shop items
-        await self.database.CreateTable(
+        await self.database.create_table(
             table_name="peep.shop",
             columns=
             """
@@ -291,7 +290,7 @@ class PepeBot(commands.Bot):
             """
         )
         # user Inventory
-        await self.database.CreateTable(
+        await self.database.create_table(
             table_name="peep.inventory",
             columns=
             """
@@ -305,7 +304,7 @@ class PepeBot(commands.Bot):
             REFERENCES peep.Users(user_id,guild_id)
             """
         )
-        await self.database.CreateTable(
+        await self.database.create_table(
             table_name="peep.booster",
             columns=
             """
@@ -319,7 +318,7 @@ class PepeBot(commands.Bot):
              peep.Guilds(guild_id) ON DELETE CASCADE
             """
         )
-        await self.database.CreateTable(
+        await self.database.create_table(
             table_name="peep.shoplog",
             columns=
             """
@@ -334,7 +333,7 @@ class PepeBot(commands.Bot):
             peep.Users(user_id,guild_id)
             """
         )
-        await self.database.CreateTable(
+        await self.database.create_table(
             table_name="peep.rolerewards",
             columns=
             """
