@@ -11,20 +11,23 @@ import json
 import asyncio
 import asyncpg
 import logging
+import collections
+from collections import defaultdict
 
 import discord
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
-    from pepebot import pepebot
+    from pepebot import PepeBot
 
 log = logging.getLogger(__name__)
 
 
 # base class for the database
-class Database:
+class BaseDatabase:
 
     def __init__(self,
+                 bot: PepeBot,
                  user: str,
                  Password: str,
                  main_database: str,
@@ -51,6 +54,8 @@ class Database:
         self.connected_to_database = asyncio.Event()
         self.connected_to_database.set()
 
+        # cache system
+
     # initialize the database
     async def initialize(self):
         await self.__connect()
@@ -58,7 +63,8 @@ class Database:
 
     # create pool and connect to database
     async def __connect(self):
-        log.info(f"connecting to database with \n user : {self.user} \n db : {self.dbname} \n host: {self.host}")
+        log.info(
+            f"connecting to database with \n user : {self.user} \n db : {self.dbname} \n host: {self.host}")
         # check if connection is already made
         if self.database_pool:
             return
@@ -68,13 +74,13 @@ class Database:
             self.connected_to_database.clear()
             self.db = self.database = \
                 self.database_pool = \
-                await self.CreateDatabasePool()
+                await self.create_database_pool()
             self.connected_to_database.set()
         else:
             await self.connected_to_database.wait()
 
     # clear everything
-    async def Cleanup(self):
+    async def close(self):
         if self.db:
             await self.db.close()
         if self.connected_to_database.is_set():
@@ -91,9 +97,8 @@ class Database:
         )
 
     # create database pool and return it
-    async def CreateDatabasePool(self):
-        log.warning('creating pool')
-
+    async def create_database_pool(self):
+        log.info("creating connection pool")
         return await asyncpg.create_pool(
             user=self.user,
             password=self.__password,
@@ -109,11 +114,11 @@ class Database:
         called after initializing the database,
         override it to use
         """
-        ...
+        pass
 
 
 # child database class
-class database(Database):
+class Database(BaseDatabase):
     """
     child database class of Database
     this contains all the useful methods and attributes that
@@ -121,65 +126,98 @@ class database(Database):
      """
 
     def __init__(
-            self, user: str,
-            Password: str,
+            self, bot: PepeBot,
+            user: str,
+            password: str,
             main_database: str,
-            Host: str,
+            host: str,
             max_inactive_timeout=0,
             max_connection: int = 13,
             min_connection: int = 10,
             schema: str = "pg_catalog"
     ):
         super().__init__(
+            bot,
             user,
-            Password,
+            password,
             main_database,
-            Host,
+            host,
             max_inactive_timeout=max_inactive_timeout,
             max_connection=max_connection,
             min_connection=min_connection,
             schema=schema
         )
 
-    async def CreateTable(self, *args, table_name: str, columns: str):
+    async def create_table(self, *args, table_name: str, columns: str):
         query = f"""CREATE TABLE IF NOT EXISTS {table_name}( {columns} );"""
         return await self.db.execute(query, *args)
 
-    async def CreateSchema(self, *args, schema_name: str):
+    async def create_schema(self, *args, schema_name: str):
         query = f"""CREATE SCHEMA IF NOT EXISTS {schema_name};"""
         return await self.db.execute(query, *args)
 
-    async def Select(self, *args, table: str, columns: str, condition: str = None,
-                     return_everything=False, Filter: str = None, row: bool = False):
+    async def select(
+            self, *args, table_name: str, columns: str, conditions: str = None,
+            filter_by: str = None, return_all_rows: bool = False,
+            return_row: bool = False
+    ):
 
-        condition = f"WHERE {condition}" if condition else ""
-        Filter = Filter if Filter else ""
-        query = f"""SELECT {columns} FROM {table} {condition} {Filter}"""
+        conditions_clause = f"WHERE {conditions}" if conditions else ""
+        filters = filter_by if filter_by else ""
+        query = f"""SELECT {columns} FROM
+                {table_name} {conditions_clause} {filters}"""
 
-        if return_everything:
+        if return_all_rows:
             return await self.db.fetch(query, *args)
-        elif row:
+        elif return_row:
             return await self.db.fetchrow(query, *args)
         else:
             return await self.db.fetchval(query, *args)
 
-    async def Delete(self, *args, table: str, condition: str):
+    async def insert(
+            self, *args, table: str, columns: str, values: str,
+            on_conflicts: str = None,
+            returning_columns: Optional[List[str]] = None
+    ):
+
+        if on_conflicts is not None:
+            on_conflicts = f"ON CONFLICT {on_conflicts}"
+        else:
+            on_conflicts = ""
+        returning = "RETURNING "
+        if returning_columns and len(returning_columns) != 0:
+            str_returning_column = ",".join(returning_columns)
+            returning += str_returning_column
+        else:
+            returning = ""
+        query = f"""
+        INSERT INTO {table}({columns}) VALUES({values}) {on_conflicts}
+        {returning}
+        """
+        if returning and returning_columns and len(returning_columns) > 0:
+            if len(returning_columns) > 1:
+                return await self.db.fetchrow(query, *args)
+            else:
+                return await self.db.fetchval(query, *args)
+        else:
+            return await self.db.execute(query, *args)
+
+    async def delete(self, *args, table: str, condition: str):
         query = f"""DELETE FROM {table} WHERE {condition}"""
         return await self.db.execute(query, *args)
 
-    async def Update(self, *args, table: str, SET: str, condition: str):
-        query = f"""UPDATE {table} SET {SET} WHERE {condition}"""
+    async def update(self, *args, table: str, update_set: str, condition: str):
+        query = f"""UPDATE {table} SET {update_set} WHERE {condition}"""
         return await self.db.execute(query, *args)
 
-    async def AddColumn(self, *args, table: str, column: str, datatype: str,
-                        check_if_exists: bool = False):
+    async def add_column(
+        self, *args, table: str, column: str, datatype: str,
+        check_if_exists: bool = False
+    ):
+
         Already_exists = None
         if check_if_exists:
-            Already_exists = await self.Select(
-                table=table,
-                columns=column
-            )
-
+            Already_exists = await self.select(table_name=table, columns=column)
         if not Already_exists:
             query = f"""ALTER TABLE {table} ADD {column} {datatype}"""
             return await self.db.execute(query, *args)
@@ -189,87 +227,79 @@ class database(Database):
         query = f"ALTER TABLE {table} DROP COLUMN {column}"
         return await self.db.execute(query, *args)
 
-    async def UpdateColumn(self, *args, table: str, column: str, dataType: str):
+    async def update_column(
+            self, *args, table: str, column: str, dataType: str):
         query = f"""ALTER TABLE {table} ALTER COLUMN {column} TYPE {dataType}"""
         return await self.db.execute(query, *args)
 
-    async def Insert(self, *args, table: str, columns: str, values: str, on_Conflicts: str = None):
-        if on_Conflicts:
-            on_Conflicts = f"ON CONFLICT {on_Conflicts}"
-        else:
-            on_Conflicts = ""
 
-        query = f"""INSERT INTO {table}({columns})
-                VALUES({values}) 
-                {on_Conflicts}
-                """
-        return await self.db.execute(query, *args)
-
-
-async def Get_Guild_settings(bot: pepebot, guild: discord.Guild):
+async def get_guild_settings(bot: PepeBot, guild_id: int):
     """
     return the guild settings stored
     in database and in the cache if exists
     """
-    guild_cached_data = bot.guild_cache.get(guild.id)
+    guild_cached_data = bot.cache.get(guild_id)
     # cached guild settings
     cached_guild_settings = None
     # check if column is row or if not get data insert
     if guild_cached_data is not None:
-        cached_guild_settings = guild_cached_data["guild_settings"]
+        cached_guild_settings = guild_cached_data.get("guild_settings")
     if cached_guild_settings is None:
-        settings = await reinitialisedGuild_settings(bot=bot, guild_id=guild.id)
+        settings = await reinitialise_guild_settings(
+            bot=bot, guild_id=guild_id)
         cached_guild_settings = settings
     return cached_guild_settings
 
 
-async def Get_channel_settings(bot: pepebot, Channel: discord.TextChannel):
+async def get_channel_settings(bot: PepeBot, channel: discord.TextChannel):
     """
     return channel settings from cached data
     if exist else from the database
     """
-    guild_data = bot.guild_cache.get(Channel.guild.id)
+    guild_data = bot.cache.get(channel.guild.id)
     # cached guild settings
-    channel_column = guild_data.get(Channel.id) if guild_data else None
+    channel_column = guild_data.get(channel.id) if guild_data else None
     cached_channel_settings = None
     if channel_column is not None:
-        cached_channel_settings = channel_column[Channel.id]
+        cached_channel_settings = channel_column.get(channel.id)
     if cached_channel_settings is None:
-        data = await reinitialisedChannel_settings(bot=bot, channel=Channel)
+        data = await reinitialise_channel_settings(
+            bot=bot, channel_id=channel.id, guild_id=channel.guild.id)
         cached_channel_settings = data
     return cached_channel_settings
 
 
-async def reinitialisedGuild_settings(bot: pepebot, guild_id: int):
+async def reinitialise_guild_settings(bot: PepeBot, guild_id: int):
     """
     Get the current data from guild settings and append
     to guild cache
     """
-    settings = await bot.Database.Select(
+    settings = await bot.database.select(
         guild_id,
-        table="peep.guild_settings",
+        table_name="peep.guild_settings",
         columns="*",
-        condition="guild_id=$1",
-        row=True
+        conditions="guild_id=$1",
+        return_row=True
     )
-    bot.guild_cache.setdefault(guild_id, {})["guild_settings"] = settings
+    bot.cache.setdefault(guild_id, {})["guild_settings"] = settings
     return settings
 
 
-async def reinitialisedChannel_settings(bot: pepebot, channel: discord.TextChannel):
+async def reinitialise_channel_settings(
+    bot: PepeBot, channel_id: int, guild_id: int
+):
     """
     Get the current data from guild settings and append
     to guild cache
     """
-    settings = await bot.Database.Select(
-        channel.id,
-        channel.guild.id,
-        table="peep.Channels",
+    settings = await bot.database.select(
+        channel_id,
+        guild_id,
+        table_name="peep.channel_settings",
         columns="*",
-        condition="guild_id=$2 AND channel_id = $1",
-        row=True
+        conditions="guild_id=$2 AND channel_id = $1",
+        return_row=True
     )
-    channel_settings = bot.guild_cache.setdefault(channel.guild.id, {})
-    channel_settings.setdefault(channel.id, {})["channel_settings"] = settings
-    print(bot.guild_cache[channel.guild.id][channel.id]["channel_settings"])
+    channel_settings = bot.cache.setdefault(guild_id, {})
+    channel_settings.setdefault(channel_id, {})["channel_settings"] = settings
     return settings
