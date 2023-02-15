@@ -1,14 +1,12 @@
 """
-Peepbot main runner
-~~~~~~~~~~~~~~~~~~~
-starter of the peep bot for discord py
-:copyright: (C) 2022-present xgreenapple
-:license: MIT.
+:author: 0xgreenapple
+:copyright: (c) 0xgreenapple(xgreenapple)
+:licence: MIt.
 """
 
 __title__ = 'Peep-bot'
 __author__ = '0xgreenapple'
-__copyright__ = 'MIT Copyright xgreenapple'
+__copyright__ = 'MIT Copyright 0xgreenapple'
 __version__ = '2.0.0'
 
 import logging
@@ -139,7 +137,7 @@ class PepeBot(commands.Bot):
 
     async def on_ready(self):
         """ Do startup task when bot successfully connects to database """
-
+        self.console_log(self.command_prefix)
         await self.wait_until_ready()
         # starts bot status loop
         await self.change_status.start()
@@ -359,7 +357,6 @@ class PepeBot(commands.Bot):
     async def get_command_prefix(bot, message: discord.Message):
         """ Returns bot command prefix """
         prefixes = "%"
-        print(bot)
         print(message)
         return prefixes if prefixes else "%"
 
@@ -395,7 +392,7 @@ class PepeBot(commands.Bot):
         try:
             self.console_log(f"closing bot session")
             await self.aiohttp_session.close()
-            await self.database.Cleanup()
+            await self.database.close()
         except Exception as e:
             print(e)
         try:
