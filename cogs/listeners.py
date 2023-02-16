@@ -6,6 +6,7 @@
 
 import asyncio
 import secrets
+import typing
 from datetime import datetime, tzinfo
 from typing import Union
 
@@ -17,66 +18,15 @@ from handler.database import (
     get_channel_settings,
     get_guild_settings
 )
-from handler.pagination import SimplePages
+from handler.utils import records_to_dict, get_attachments
 from handler.view import thread_channel
 from pepebot import PepeBot
-
-
-class leaderboard(SimplePages):
-    def __init__(self, entries: list, *, ctx: Context, per_page: int = 12,
-                 title: str = None):
-        converted = entries
-        print(entries)
-        super().__init__(converted, per_page=per_page, ctx=ctx)
-
-
-def get_attachments(message: discord.Message, links: bool = False):
-    AllowedTypes = ("image", "video")
-    attachments = message.attachments
-    embeds = message.embeds
-    if (not attachments or len(attachments) == 0) \
-            and (not embeds or len(embeds) == 0):
-        return
-    Resolved_Attachments = []
-    for image in attachments:
-        if image.content_type.startswith(AllowedTypes):
-            Resolved_Attachments.append(image)
-
-    if links:
-        for embed in embeds:
-            if embed.image:
-                Resolved_Attachments.append(embed.image)
-            elif embed.image:
-                Resolved_Attachments.append(embed.video)
-
-    return Resolved_Attachments
-
-
-async def AddLikes(bot: PepeBot, user: discord.Member):
-    total = await bot.database.insert(
-        user.id,
-        user.guild.id,
-        table="peep.leaderboard",
-        columns="user_id,guild_id,likes",
-        values="$1,$2,$3",
-        on_conflicts="(user_id,guild_id) DO UPDATE SET likes = COALESCE(leaderboard.likes, 0) + 1",
-        returning_columns=['likes', "user_id"]
-    )
-    print(total["total"], bot.get_user(total["user_id"]).name)
-
-
-async def removeLikes():
-    # TODO: add a method to remove like from the database if someone
-    #  remove likes from the message
-    pass
 
 
 class Listeners(commands.Cog):
     def __init__(self, bot: PepeBot) -> None:
         self.bot = bot
-        self.MsgLikes = {}
         self.Database = self.bot.database
-        self.cachedLists = {}
 
     @staticmethod
     def is_valid_emoji(
@@ -90,7 +40,7 @@ class Listeners(commands.Cog):
         return True
 
     @staticmethod
-    def get_author_from_message(message:discord.Message):
+    def get_author_from_message(message: discord.Message):
         if not message.author.bot:
             return message.author
         message_content = message.content
@@ -103,36 +53,71 @@ class Listeners(commands.Cog):
             return mentions[0]
         return
 
-    def cacheMemeMessage(
+    def cache_meme_message(
             self, message: discord.Message, maxLikes: int,
-            next_Channel: int, author_id: int):
+            next_Channel: int, author_id: int,
+            gallery_message: typing.Optional[discord.Message] = None):
 
         """ store memes related messages """
         guild_cache = self.bot.cache.get_guild(message.guild.id)
-        if guild_cache is None:
-            self.bot.cache.set_guild(message.guild.id)
-            guild_cache = self.bot.cache.get_guild(message.guild.id)
-
+        gallery_msg = None
+        if gallery_msg is not None:
+            gallery_msg = gallery_message
         guild_cache["memes"] = {}
         message_obj = {
             "message": message,
             "author_id": author_id,
+            "gallery_message": gallery_msg,
         }
         guild_cache["memes"][message.id] = message_obj
 
     def get_cached_message(self, guild_id, message_id):
         """ return message from bot cache """
-        guild_cache = self.bot.cache.get(guild_id)
-        if guild_cache is None:
-            return None
-        memes = guild_cache.get("memes")
+        memes = self.bot.cache.get_from_guild(guild_id, "memes")
         if memes is None:
             return None
         return memes.get(message_id)
 
-    async def checkForRewards(self, limit: int, member: discord.Member):
+    def set_meme_is_completed(self, message: discord.Message):
+        to_insert = self.bot.database.insert(
+            message.guild.id,
+            message.channel.id,
+            message.id,
+            table="peep.meme_completed_messages",
+            columns="guild_id,channel_id,message_id",
+            values="$1,$2,$3",
+            on_conflicts=f"(message_id) DO NOTHING"
+        )
+        self.bot.cache.append_completed_message(
+            guild_id=message.guild.id,
+            channel_id=message.channel.id,
+            message_id=message.id
+        )
+        self.bot.loop.create_task(to_insert)
+
+    async def is_completed_meme(self, message: discord.Message):
+        """ check from the database the meme"""
+        channel = message.channel
+        guild = channel.guild
+        meme_messages = self.bot.cache.get_completed_messages(
+            channel_id=channel.id, guild_id=guild.id
+        )
+        if meme_messages is None:
+            channel_cache = self.bot.cache.get_channel(
+                channel_id=channel.id, guild_id=guild.id)
+            meme_messages = channel_cache["meme_completed_messages"] = (
+                records_to_dict(await self.bot.database.select(
+                    guild.id, channel.id,
+                    table_name="peep.meme_completed_messages",
+                    columns="message_id",
+                    conditions="guild_id = $1 AND channel_id = $2",
+                    return_all_rows=True,
+                ), remove_single="message_id"))
+        return meme_messages.count(message.id) != 0
+
+    async def check_for_rewards(self, limit: int, member: discord.Member):
         guild = member.guild
-        rewards = self.bot.cache.getFromGuild(
+        rewards = self.bot.cache.get_from_guild(
             guild_id=guild.id, key="rewards")
         reward_role = None
         if rewards is not None:
@@ -150,13 +135,12 @@ class Listeners(commands.Cog):
         if reward_role is None:
             return
         role = guild.get_role(reward_role)
-        if role is None:
+        if role is None or not role.is_assignable():
             return
         member_roles = member.roles
         if role not in member_roles:
             member_roles.append(role)
             await member.edit(roles=member_roles)
-        return
 
     async def add_likes(self, member_id, guild_id, like: int = 1):
         await self.bot.database.insert(
@@ -170,14 +154,29 @@ class Listeners(commands.Cog):
                          "DO UPDATE SET "
                          "likes = COALESCE(user_details.likes, 0) + $3")
 
+    async def remove_likes(self, user: discord.Member):
+        await self.bot.database.insert(
+            user.id,
+            user.guild.id,
+            0,
+            table="peep.user_details",
+            columns="guild_id,user_id,likes",
+            values="$1,$2,$3",
+            on_conflicts="""
+            (user_id,guild_id) DO UPDATE SET likes =
+             CASE
+                WHEN user_details.likes <= 0 THEN 0
+                ELSE user_details.likes - 1
+            END;""")
+
     async def move_message_to(
             self, channel: discord.TextChannel, message_obj: dict = None):
 
-        message: discord.Message = message_obj["message"]
-        attachment: discord.Attachment = get_attachments(message)[0]
+        cached_message: discord.Message = message_obj["message"]
+        attachment: discord.Attachment = get_attachments(cached_message)[0]
         attachment_file = await attachment.to_file(
             filename=attachment.filename, use_cached=True)
-        author = message.guild.get_member(message_obj["author_id"])
+        author = cached_message.guild.get_member(message_obj["author_id"])
 
         message = await channel.send(
             content=f"by {author.mention}",
@@ -185,14 +184,16 @@ class Listeners(commands.Cog):
         )
 
         # delete old message object from the cache and append new one
-        self.bot.cache[message.guild.id]["memes"].pop(message.id)
+        self.bot.cache.get_guild(message.guild.id)["memes"].pop(
+            cached_message.id)
+        self.set_meme_is_completed(message=cached_message)
         channel_settings = await get_channel_settings(
             bot=self.bot, channel=channel)
         if channel_settings is None:
             return
         max_like_limit = channel_settings["max_like"]
         next_gallery = channel_settings["nextlvl"]
-        self.cacheMemeMessage(
+        self.cache_meme_message(
             message=message, author_id=author.id, maxLikes=max_like_limit,
             next_Channel=next_gallery)
 
@@ -250,6 +251,7 @@ class Listeners(commands.Cog):
         return
 
     @commands.Cog.listener(name="on_raw_reaction_add")
+    @commands.Cog.listener(name="on_raw_reaction_remove")
     async def watch_for_reactions(
             self, reaction: discord.RawReactionActionEvent
     ):
@@ -257,13 +259,14 @@ class Listeners(commands.Cog):
         """ watch for reactions on the message containing
          attachments in meme channels and store likes"""
 
+        is_event_type_removed = reaction.event_type == "REACTION_REMOVE"
         channel = self.bot.get_channel(reaction.channel_id)
         message = await channel.fetch_message(reaction.message_id)
         guild = channel.guild
         reactions = message.reactions
         attachments = get_attachments(message=message)
 
-        if reaction.member.bot:
+        if not is_event_type_removed and reaction.member.bot:
             return
         if not attachments or len(attachments) == 0:
             return
@@ -291,7 +294,9 @@ class Listeners(commands.Cog):
         is_channel_a_meme_channel = channel_settings.get("is_memechannel")
         if not is_channel_a_meme_channel:
             return
-
+        if await self.is_completed_meme(message):
+            print("already completed")
+            return
         message_watch_duration = channel_settings["voting_time"]
         message_cache = self.get_cached_message(
             guild_id=guild.id, message_id=message.id)
@@ -305,12 +310,22 @@ class Listeners(commands.Cog):
                     guild_cache = self.bot.cache.get_guild(guild_id=guild.id)
                     guild_cache["memes"].pop(message.id)
                 return
+        likes = 0
+        for reaction in reactions:
+            if self.is_valid_emoji(
+                    emoji=reaction.emoji, compair_to=like_emoji):
+                likes = reaction.count
+                break
+
+        if (likes + 1 if is_event_type_removed else likes - 1) >= like_limit:
+            print("here")
+            return
 
         if message_cache is None:
             author = self.get_author_from_message(message)
             if author is None:
                 return
-            self.cacheMemeMessage(
+            self.cache_meme_message(
                 author_id=author.id,
                 message=message,
                 maxLikes=like_limit,
@@ -320,23 +335,23 @@ class Listeners(commands.Cog):
                 guild_id=guild.id, message_id=message.id)
 
         message_author = message_cache["author_id"]
-        likes = 0
-        for reaction in reactions:
-            if self.is_valid_emoji(
-                    emoji=reaction.emoji, compair_to=like_emoji):
-                likes = reaction.count
-                break
-        if likes >= like_limit and next_channel is not None:
+        if (likes >= like_limit and next_channel is not None and
+                not is_event_type_removed):
             await self.move_message_to(
                 channel=self.bot.get_channel(next_channel),
                 message_obj=message_cache
             )
         member = guild.get_member(message_author)
-        self.bot.loop.create_task(self.add_likes(
-            member_id=message_author, guild_id=guild.id), name=f"store likes")
-        self.bot.loop.create_task(self.checkForRewards(
-            limit=likes, member=member), name="role rewards")
+        if not is_event_type_removed:
+            self.bot.loop.create_task(self.add_likes(
+                member_id=message_author, guild_id=guild.id),
+                name=f"store likes")
+            self.bot.loop.create_task(self.check_for_rewards(
+                limit=likes, member=member), name="role rewards")
+        else:
+            self.bot.loop.create_task(self.remove_likes(user=member))
 
+    @commands.Cog.listener(name="one")
     @commands.Cog.listener(name="on_message")
     async def watch_for_memes(self, message: discord.Message):
         """
@@ -374,7 +389,7 @@ class Listeners(commands.Cog):
         next_channel = settings.get("nextlvl")
         max_likes = settings.get("max_like")
         if message.author.id != self.bot.user.id:
-            self.cacheMemeMessage(
+            self.cache_meme_message(
                 message=message, maxLikes=max_likes,
                 next_Channel=next_channel, author_id=message.author.id)
 
