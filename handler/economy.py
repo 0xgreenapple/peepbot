@@ -201,8 +201,8 @@ class Economy:
 
     # return item with its name
     async def get_item_named(
-        self, guild_id: int, item_name: str,
-        columns: str = "items,cost,emoji,expired"
+            self, guild_id: int, item_name: str,
+            columns: str = "items,cost,emoji,expired"
     ) -> Optional[asyncpg.Record]:
 
         """ return an item with given name
@@ -220,8 +220,8 @@ class Economy:
 
     # get a item from user
     async def get_user_item(
-        self, user: discord.Member, item_name: str,
-        columns: str = "items"
+            self, user: discord.Member, item_name: str,
+            columns: str = "items"
     ) -> Optional[asyncpg.Record]:
 
         """ get a specific item from the user """
@@ -257,8 +257,8 @@ class Economy:
 
     # add items to the shop
     async def add_shop_item(
-        self, guild_id: int, name: str, cost: float,
-        emoji: str = None, seconds: typing.Optional[int] = None
+            self, guild_id: int, name: str, cost: float,
+            emoji: str = None, seconds: typing.Optional[int] = None
     ):
         """ add a item to shop """
 
@@ -299,7 +299,7 @@ class Economy:
             values="$1,$2,$3,$4")
 
     async def remove_user_items(
-        self, user: discord.Member, item_name: str, forced: bool = True
+            self, user: discord.Member, item_name: str, forced: bool = True
     ) -> asyncpg.Record:
         """ remove an item from the user inventory"""
         items = await self.get_item_named(
@@ -342,8 +342,8 @@ class Economy:
 
     # buy a item from the shop
     async def buy_item(
-        self, user: discord.Member, item_name: str, bot: PepeBot
-    ) -> Tuple[float, str, float, timedelta, bool, float]:
+            self, user: discord.Member, item_name: str, bot: PepeBot
+    ) -> dict:
 
         user_points = await self.get_user_points(user)
         # check if user has given item
@@ -384,12 +384,28 @@ class Economy:
 
         # remove coins from the user
         total = await self.remove_user_points(user=user, points=cost)
-        await self.log_item(guild_id=user.guild.id, user_id=user.id,
-                            item=item_metadata)
-        return cost, emoji, total, expire_time, is_booster_item, threshold
+        purchased_at = datetime.utcnow()
+        expiring_on = None
+        if expire_time is not None:
+            expiring_on = purchased_at + expire_time
+        purchased_metadata = {
+            "name": item_name,
+            "author": user.id,
+            "cost": cost,
+            "emoji": emoji,
+            "total": total,
+            "expire_time": expire_time,
+            "expiring_on": expiring_on,
+            "is_booster_item": is_booster_item,
+            'threshold': threshold,
+            "purchased_at": purchased_at
+        }
+        self.push_purchased_event(
+            guild_id=user.guild.id, item_metadata=purchased_metadata)
+        return purchased_metadata
 
     async def cache_booster(
-        self, guild_id: int
+            self, guild_id: int
     ) -> Optional[Union[dict, asyncpg.Record]]:
 
         data = await self.database.select(
@@ -405,19 +421,18 @@ class Economy:
                 guild_id=guild_id, item_name=data["item_name"])
             data["expired"] = shop_item["expired"]
 
-        self.bot_cache.Insert(guild_id, value={})
-        self.bot_cache[guild_id]["boosterCache"] = data
+        self.bot_cache.insert_into_guild(guild_id, "boosterCache", data)
         return data
 
     async def get_booster(
             self, guild_id: int
     ) -> Optional[Union[asyncpg.Record, dict]]:
-        if (guild_id in self.bot_cache and
-                "boosterCache" in self.bot_cache):
-            data = self.bot_cache[guild_id]["boosterCache"]
-        else:
-            data = await self.cache_booster(guild_id=guild_id)
-        return data
+
+        booster = self.bot_cache.get_from_guild(
+            key="boosterCache", guild_id=guild_id)
+        if booster is None:
+            booster = await self.cache_booster(guild_id=guild_id)
+        return booster
 
     # check if user has booster item
     async def has_booster(self, user: discord.Member):
@@ -439,7 +454,7 @@ class Economy:
         return False
 
     async def update_shop_Booster(
-        self, guild_id: int, cost: float, emoji: str
+            self, guild_id: int, cost: float, emoji: str
     ):
         """ insert/update booster from the database """
         # get the boosters data from the list
@@ -486,7 +501,7 @@ class Economy:
             table="peep.booster",
             condition="guild_id=$1"
         )
-        self.bot_cache[guild_id]["boosterCache"] = None
+        self.bot_cache["guilds"][guild_id]["boosterCache"] = None
         return booster
 
     async def is_turned_on(self, guild_id: int) -> bool:
@@ -497,16 +512,27 @@ class Economy:
             return True
         return False
 
-    async def log_item(self, guild_id: int, user_id: int, item) -> asyncio.Task:
-        return self.bot.loop.create_task(self.database.insert(
+    async def log_item(
+        self, guild_id: int, user_id: int, item_name: str,
+        item_cost: float, item_expiring_on: datetime.datetime,
+        item_purchase_time: datetime.datetime, message_id: int
+    ):
+        return await self.bot.database.insert(
             guild_id,
             user_id,
-            item["items"],
-            item["cost"],
-            datetime.utcnow(),
-            item["expired"],
+            item_name,
+            item_cost,
+            item_expiring_on,
+            item_purchase_time,
+            message_id,
             table="peep.shoplog",
-            columns="guild_id,user_id,item_name,"
-                    "cost,purchased_at,expired_on",
-            values="$1,$2,$3,$4,$5,$6"
-        ))
+            columns="""
+                            guild_id,user_id,item_name,
+                            cost,expired_on,purchased_at,
+                            log_message_id""",
+            values="$1,$2,$3,$4,$5,$6,$7",
+            returning_columns=["id"]
+        )
+
+    def push_purchased_event(self, guild_id: int, item_metadata: dict):
+        self.bot.dispatch("item_purchase", guild_id, item_metadata)

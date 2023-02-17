@@ -6,6 +6,7 @@
 
 import asyncio
 import secrets
+import logging
 import typing
 from datetime import datetime, tzinfo
 from typing import Union
@@ -18,9 +19,11 @@ from handler.database import (
     get_channel_settings,
     get_guild_settings
 )
-from handler.utils import records_to_dict, get_attachments
-from handler.view import thread_channel
+from handler.utils import records_to_dict, get_attachments, utc_to_local
+from handler.view import thread_channel, ItemLogMessage
 from pepebot import PepeBot
+
+_log = logging.getLogger("pepebot")
 
 
 class Listeners(commands.Cog):
@@ -407,6 +410,79 @@ class Listeners(commands.Cog):
         if dislike_emoji != '0':
             dislike_message = message.add_reaction(dislike_emoji)
             self.bot.loop.create_task(dislike_message)
+
+    @commands.Cog.listener(name="on_item_purchase")
+    async def on_item_purchase_event(
+            self, guild_id: int, raw_item_metadata: dict):
+
+        guild = self.bot.get_guild(guild_id)
+        guild_settings = await get_guild_settings(
+            bot=self.bot, guild_id=guild_id)
+        message_id = None
+        message = None
+        embed = None
+        item_autor = raw_item_metadata["author"]
+        item_name = raw_item_metadata["name"]
+        item_emoji = raw_item_metadata["emoji"]
+        item_cost = raw_item_metadata["cost"]
+        item_is_booster = raw_item_metadata["is_booster_item"]
+        item_purchase_time = raw_item_metadata["purchased_at"]
+        item_expiring_on = raw_item_metadata["expiring_on"]
+
+        shop_log_channel = None
+        if guild_settings is not None:
+            shop_log_channel = guild_settings["shoplog"]
+
+        if shop_log_channel is not None:
+            shop_log_channel = self.bot.get_channel(shop_log_channel)
+            channel_permissions = shop_log_channel.permissions_for(guild.me)
+            if not (channel_permissions.send_messages and
+                    channel_permissions.embed_links):
+                _log.error(
+                    f"missing access for shop log channel in {guild.name}")
+            user = guild.get_member(item_autor)
+            embed = discord.Embed(title=f"``item sold!``")
+            expire_on = 'never'
+            if item_expiring_on is not None:
+                expire_on = discord.utils.format_dt(
+                    utc_to_local(item_expiring_on), style='R')
+            booster_msg = ''
+            if item_is_booster:
+                booster_msg = (
+                    f"user {user.mention} has bought a booster item! \n")
+            item_purchase_time_as_utc = discord.utils.format_dt(
+                utc_to_local(item_purchase_time)
+            )
+            embed.description = (
+                f"{booster_msg}"
+                f">>> {self.bot.emoji.right} **user**: {user.mention} \n"
+                f"**at**: {item_purchase_time_as_utc} \n"
+                f"**item:** {item_emoji} {item_name} ``cost``:{item_cost} \n"
+                f"**expires**:"
+                f" {expire_on}"
+            )
+            view = ItemLogMessage(bot=self.bot)
+            if item_is_booster:
+                view.accept_btn.style = discord.ButtonStyle.danger
+                view.accept_btn.label = "remove"
+            message = await shop_log_channel.send(embed=embed, view=view)
+            message_id = f"{message.channel.id}:{message.id}"
+            view.log_id = message_id
+            view.message = message
+
+        item_id = await self.bot.economy.log_item(
+            guild_id=guild.id,
+            user_id=item_autor,
+            item_cost=item_cost,
+            item_name=item_name,
+            item_purchase_time=item_purchase_time,
+            item_expiring_on=item_expiring_on,
+            message_id=message_id
+        )
+        if message is not None:
+            embed.title = f"``item sold! id({item_id})``"
+            await message.edit(embed=embed)
+        return
 
 
 async def setup(bot: PepeBot) -> None:
