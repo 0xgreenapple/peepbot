@@ -1,247 +1,263 @@
+"""
+Peepbot main runner
+~~~~~~~~~~~~~~~~~~~
+starter of the peep bot for discord py
+:copyright: (C) 2022-present xgreenapple
+ (c) 2015 Rapptz
+:license: MIT.
+"""
+
 from __future__ import annotations
 
-import asyncio
-from typing import TYPE_CHECKING, Any, Dict, Optional
+
+import math
+
 import discord
-from discord.ext import commands
-from discord.ext.commands import Paginator as CommandPaginator
-from discord.ext import menus
-from pepebot import pepebot
+from discord.ui import Item
+
+from datetime import timedelta
+from typing import TYPE_CHECKING, Any, Dict, Optional, List
 
 if TYPE_CHECKING:
+    from pepebot import PepeBot
     from handler.Context import Context
 
 
-class RoboPages(discord.ui.View):
-    def __init__(
-            self,
-            source: menus.PageSource,
-            *,
-            ctx: Context,
-            check_embeds: bool = True,
-            compact: bool = False,
+# errors
+
+class PagesNotImplemented(Exception):
+    pass
+
+
+class PageSource:
+
+    def __init__(self, data: List[any], max_per_page: int):
+        self.last_index = 0
+        self.first_index = 0
+        self.data = data
+        self.max_per_page = max_per_page
+        self.current_page = 0
+        self.current_entry = None
+        self.max_pages = 0
+        self.data_length = 0
+
+    def initialise(
+            self, data: List[any] = None, max_per_page: int = None
     ):
-        super().__init__()
-        self.source: menus.PageSource = source
-        self.check_embeds: bool = check_embeds
-        self.ctx: Context = ctx
-        self.message: Optional[discord.Message] = None
-        self.current_page: int = 0
-        self.compact: bool = compact
-        self.input_lock = asyncio.Lock()
-        self.clear_items()
-        self.fill_items()
+        if data is not None:
+            self.data = data
+        if max_per_page is not None:
+            self.max_per_page = max_per_page
+        self.data_length = len(self.data)
+        self.max_pages = math.ceil(len(self.data) / self.max_per_page)
+        self.get_page(0)
 
-    def fill_items(self) -> None:
+    def get_first_index(self):
+        return self.current_page * self.max_per_page
 
-        if self.source.is_paginating():
-            max_pages = self.source.get_max_pages()
-            use_last_and_first = max_pages is not None and max_pages >= 2
-            if use_last_and_first:
-                self.add_item(self.go_to_first_page)
-            self.add_item(self.go_to_previous_page)
+    def get_last_index(self):
+        return (self.current_page + 1) * self.max_per_page
 
-            self.add_item(self.go_to_next_page)
-            if use_last_and_first:
-                self.add_item(self.go_to_last_page)
+    def get_page(self, page_num: int):
+        self.current_page = page_num
+        self.current_entry = self.get_entry()
+        return self.current_entry
 
-    async def _get_kwargs_from_page(self, page: int) -> Dict[str, Any]:
-        value = await discord.utils.maybe_coroutine(self.source.format_page, self, page)
-        if isinstance(value, dict):
-            return value
-        elif isinstance(value, str):
-            return {'content': value, 'embed': None}
-        elif isinstance(value, discord.Embed):
-            return {'embed': value, 'content': None}
-        else:
-            return {}
+    def get_max_pages(self):
+        return self.max_pages
 
-    async def show_page(self, interaction: discord.Interaction, page_number: int) -> None:
-        page = await self.source.get_page(page_number)
-        self.current_page = page_number
-        kwargs = await self._get_kwargs_from_page(page)
-        self._update_labels(page_number)
-        if kwargs:
-            if interaction.response.is_done():
-                if self.message:
-                    await self.message.edit(**kwargs, view=self)
-            else:
-                await interaction.response.edit_message(**kwargs, view=self)
+    def get_current_entry(self):
+        return self.current_entry
 
-    def _update_labels(self, page_number: int) -> None:
-        self.go_to_first_page.disabled = page_number == 0
-        if self.compact:
-            max_pages = self.source.get_max_pages()
-            self.go_to_last_page.disabled = max_pages is None or (page_number + 1) >= max_pages
-            self.go_to_next_page.disabled = max_pages is not None and (page_number + 1) >= max_pages
-            self.go_to_previous_page.disabled = page_number == 0
-            return
+    def get_entry(self):
+        self.first_index = self.get_first_index()
+        self.last_index = self.get_last_index()
+        return self.data[self.first_index:self.last_index]
 
-        self.go_to_previous_page.label = str(page_number)
-        self.go_to_next_page.label = str(page_number + 2)
-        self.go_to_next_page.disabled = False
-        self.go_to_previous_page.disabled = False
-        self.go_to_first_page.disabled = False
-
-        max_pages = self.source.get_max_pages()
-        if max_pages is not None:
-            self.go_to_last_page.disabled = (page_number + 1) >= max_pages
-            if (page_number + 1) >= max_pages:
-                self.go_to_next_page.disabled = True
-                self.go_to_next_page.label = '…'
-            if page_number == 0:
-                self.go_to_previous_page.disabled = True
-                self.go_to_previous_page.label = '…'
-
-    async def show_checked_page(self, interaction: discord.Interaction, page_number: int) -> None:
-        max_pages = self.source.get_max_pages()
-        try:
-            if max_pages is None:
-                # If it doesn't give maximum pages, it cannot be checked
-                await self.show_page(interaction, page_number)
-            elif max_pages > page_number >= 0:
-                await self.show_page(interaction, page_number)
-        except IndexError:
-            # An error happened that can be handled, so ignore it.
-            pass
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user and interaction.user.id in (self.ctx.bot.owner_id, self.ctx.author.id):
-            return True
-        await interaction.response.send_message('This pagination menu cannot be controlled by you, sorry!',
-                                                ephemeral=True)
-        return False
-
-    async def on_timeout(self) -> None:
-        if self.message:
-            await self.message.edit(view=None)
-
-    async def on_error(self, interaction: discord.Interaction, error: Exception, item: discord.ui.Item) -> None:
-        if interaction.response.is_done():
-            await interaction.followup.send('An unknown error occurred, sorry', ephemeral=True)
-        else:
-            await interaction.response.send_message('An unknown error occurred, sorry', ephemeral=True)
-
-    async def start(self, *, content: Optional[str] = None) -> None:
-        if self.check_embeds and not self.ctx.channel.permissions_for(self.ctx.me).embed_links:  # type: ignore
-            await self.ctx.send('Bot does not have embed links permission in this channel.')
-            return
-
-        await self.source._prepare_once()
-        page = await self.source.get_page(0)
-        kwargs = await self._get_kwargs_from_page(page)
-        if content:
-            kwargs.setdefault('content', content)
-
-        self._update_labels(0)
-        self.message = await self.ctx.send(**kwargs, view=self)
-
-    @discord.ui.button(label='≪', style=discord.ButtonStyle.grey)
-    async def go_to_first_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """go to the first page"""
-        await self.show_page(interaction, 0)
-
-    @discord.ui.button(label='Back', style=discord.ButtonStyle.blurple)
-    async def go_to_previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """go to the previous page"""
-        await self.show_checked_page(interaction, self.current_page - 1)
-
-    @discord.ui.button(label='Next', style=discord.ButtonStyle.blurple)
-    async def go_to_next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """go to the next page"""
-        await self.show_checked_page(interaction, self.current_page + 1)
-
-    @discord.ui.button(label='≫', style=discord.ButtonStyle.grey)
-    async def go_to_last_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """go to the last page"""
-        # The call here is safe because it's guarded by skip_if
-        await self.show_page(interaction, self.source.get_max_pages() - 1)  # type: ignore
+    def clear(self):
+        self.data = None
+        self.current_entry = None
+        self.current_page = 0
+        self.max_pages = 0
+        self.data_length = 0
 
 
-class FieldPageSource(menus.ListPageSource):
-    """A page source that requires (field_name, field_value) tuple items."""
+class EmbedFormatter:
+    def __init__(self, name: str):
+        self.embed = discord.Embed(title=name)
 
-    def __init__(self, entries, *, per_page=12):
-        super().__init__(entries, per_page=per_page)
-        self.embed = discord.Embed(colour=discord.Colour.blurple())
-
-    async def format_page(self, menu, entries):
-        self.embed.clear_fields()
-        self.embed.description = None
-
-        for key, value in entries:
-            self.embed.add_field(name=key, value=value, inline=False)
-
-        maximum = self.get_max_pages()
-        if maximum > 1:
-            text = f'Page {menu.current_page + 1}/{maximum} ({len(self.entries)} entries)'
-            self.embed.set_footer(text=text)
-
+    def get_formate_embed(
+            self, current_page: int, max_pages: int, current_entry_num: int,
+            entry: List[any]
+    ):
+        self.embed.description = "\n"
+        formatted_value = []
+        for i, value in enumerate(entry, start=current_entry_num + 1):
+            formatted_value.append(self.formate_lines(i, value))
+        self.embed.description = self.embed.description.join(formatted_value)
+        self.embed.set_footer(text=f"page: {current_page + 1}/{max_pages}")
         return self.embed
 
+    @staticmethod
+    def formate_lines(current_index: int, value) -> str:
+        return f"{current_index}: {value}"
 
-class TextPageSource(menus.ListPageSource):
-    def __init__(self, text, *, prefix='```', suffix='```', max_size=2000):
-        pages = CommandPaginator(prefix=prefix, suffix=suffix, max_size=max_size - 200)
-        for line in text.split('\n'):
-            pages.add_line(line)
-
-        super().__init__(entries=pages.pages, per_page=1)
-
-    async def format_page(self, menu, content):
-        maximum = self.get_max_pages()
-        if maximum > 1:
-            return f'{content}\nPage {menu.current_page + 1}/{maximum}'
-        return content
+    def clean(self):
+        self.embed = discord.Embed()
 
 
-class SimplePageSource(menus.ListPageSource):
-    async def format_page(self, menu, entries):
-        pages = []
-        for index, entry in enumerate(entries, start=menu.current_page * self.per_page):
-            pages.append(f'{index + 1}. {entry[0]} **likes**: ``{entry[1]}``')
+class SimpleEmbedPages(PageSource):
+    def __init__(
+            self,
+            bot: PepeBot,
+            ctx: Context,
+            formatter: Any[EmbedFormatter],
+            data: List[any],
+            max_per_page: int = 5,
+            timeout: Optional[timedelta] = timedelta(seconds=180)
+    ):
+        super().__init__(data=data, max_per_page=max_per_page)
+        self.bot = bot
+        self.view_timeout = timeout
+        self.ctx = ctx
+        self.formatter = formatter
+        self.embed = formatter.embed
+        self.message: Optional[discord.Message] = None
 
-        maximum = self.get_max_pages()
-        if maximum > 1:
-            footer = f'Page {menu.current_page + 1}/{maximum} ({len(self.entries)} entries)'
-            menu.embed.set_footer(text=footer)
-
-        menu.embed.description = '\n'.join(pages)
-        menu.embed.title = f'**memes leaderboard** ``{len(pages)}``'
-        return menu.embed
-
-
-class balleaderboard(menus.ListPageSource):
-    async def format_page(self, menu, entries):
-        pages = []
-        for index, entry in enumerate(entries, start=menu.current_page * self.per_page):
-            pages.append(f'{index + 1}. {entry[0]} <a:coin1:1008074318082752583> **points**: ``{entry[1]}``')
-
-        maximum = self.get_max_pages()
-        if maximum > 1:
-            footer = f'Page {menu.current_page + 1}/{maximum} ({len(self.entries)} entries)'
-            menu.embed.set_footer(text=footer)
-
-        menu.embed.description = '\n'.join(pages)
-        menu.embed.title = f'**leaderboard of memesaurus** ``{len(pages)}``'
-        return menu.embed
+    async def send(self):
+        view = PepePages(
+            page_source=self, timeout=self.view_timeout.seconds)
+        await view.initialise()
+        self.embed = view.load_embed()
+        self.message = await self.ctx.send(embed=self.embed, view=view)
+        view.message = self.message
 
 
-class SimplePages(RoboPages):
-    """A simple pagination session reminiscent of the old Pages interface.
-    Basically an embed with some normal formatting.
-    """
+class PepePages(discord.ui.View):
+    def __init__(
+            self,
+            page_source: SimpleEmbedPages,
+            timeout: float = 180
+    ):
+        super().__init__(timeout=timeout)
+        self.bot = page_source.bot
+        self.page_source = page_source
+        self.current_page = 0
+        self.message: Optional[discord.Message] = None
+        self.embed = self.page_source.embed
+        self.is_ready = False
 
-    def __init__(self, entries, *, ctx: Context, per_page: int = 12):
-        super().__init__(SimplePageSource(entries, per_page=per_page), ctx=ctx)
-        self.embed = discord.Embed(colour=discord.Colour.blurple())
+    async def initialise(self):
+        self.next.emoji = self.bot.emoji.right
+        self.prev.emoji = self.bot.emoji.left
+        self.last.emoji = self.bot.emoji.doubleright
+        self.first.emoji = self.bot.emoji.doubleleft
+        self.page_source.initialise()
+        self.handle_button_state()
+        self.is_ready = True
 
+    @discord.ui.button(style=discord.ButtonStyle.blurple)
+    async def prev(
+            self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        previous_embed_page = self.get_prev_page()
+        self.handle_button_state()
+        await interaction.response.edit_message(
+            embed=previous_embed_page, view=self)
 
-class bal_leaderboard(RoboPages):
-    """A simple pagination session reminiscent of the old Pages interface.
-    Basically an embed with some normal formatting.
-    """
+    @discord.ui.button(style=discord.ButtonStyle.blurple)
+    async def first(
+            self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        first_embed_page = self.get_first_page()
+        self.handle_button_state()
+        await interaction.response.edit_message(
+            embed=first_embed_page, view=self)
 
-    def __init__(self, entries, *, ctx: Context, per_page: int = 12):
-        super().__init__(balleaderboard(entries, per_page=per_page), ctx=ctx)
-        self.embed = discord.Embed(colour=discord.Colour.blurple())
+    @discord.ui.button(style=discord.ButtonStyle.blurple)
+    async def last(
+            self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        last_embed_page = self.get_last_page()
+        self.handle_button_state()
+        await interaction.response.edit_message(
+            embed=last_embed_page, view=self
+        )
+
+    @discord.ui.button(style=discord.ButtonStyle.blurple)
+    async def next(
+            self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        next_embed_page = self.get_next_page()
+        self.handle_button_state()
+        await interaction.response.edit_message(
+            embed=next_embed_page, view=self)
+
+    def handle_button_state(self):
+        max_indexes = self.page_source.max_pages
+        current_index = self.current_page
+        if current_index >= max_indexes - 1:
+            if not self.next.disabled:
+                self.next.disabled = True
+            if not self.last.disabled:
+                self.last.disabled = True
+        else:
+            if self.next.disabled:
+                self.next.disabled = False
+            if self.last.disabled:
+                self.last.disabled = False
+        if current_index <= 0:
+            if not self.first.disabled:
+                self.first.disabled = True
+            if not self.prev.disabled:
+                self.prev.disabled = True
+        else:
+            if self.first.disabled:
+                self.first.disabled = False
+            if self.prev.disabled:
+                self.prev.disabled = False
+
+    def load_embed(self):
+        embed = self.page_source.formatter.get_formate_embed(
+            self.current_page,
+            self.page_source.max_pages,
+            self.page_source.first_index,
+            entry=self.page_source.get_current_entry())
+        return embed
+
+    def get_custom_page(self, page_num: int):
+        self.current_page = page_num
+        self.page_source.get_page(self.current_page)
+        return self.load_embed()
+
+    def get_next_page(self):
+        self.current_page += 1
+        self.page_source.get_page(self.current_page)
+        return self.load_embed()
+
+    def get_prev_page(self):
+        self.current_page -= 1
+        self.page_source.get_page(self.current_page)
+        return self.load_embed()
+
+    def get_first_page(self):
+        self.current_page = 0
+        self.page_source.get_page(self.current_page)
+        return self.load_embed()
+
+    def get_last_page(self):
+        self.current_page = self.page_source.max_pages - 1
+        self.page_source.get_page(self.current_page)
+        return self.load_embed()
+
+    async def on_timeout(self) -> None:
+        for child in self.children:
+            child.disabled = True
+        await self.message.edit(view=self)
+
+    async def on_error(
+            self, interaction: discord.Interaction, error: Exception,
+            item: Item[Any]
+    ) -> None:
+        await interaction.response.send_message(
+            "something went wrong", ephemeral=True)
