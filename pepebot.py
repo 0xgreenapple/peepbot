@@ -16,7 +16,6 @@ import asyncio
 import datetime
 import typing
 import aiohttp
-import asyncpg
 
 import discord
 from discord.ext import commands, tasks
@@ -27,11 +26,13 @@ from platform import python_version
 from typing import Optional
 
 from handler import Context
+from handler.economy import Economy
 from handler.utils import Emojis, Colour
 from handler.logger import Logger
 from handler.tasks import CheckEconomyItems
-from handler.guild_cache import guild_cache
+from handler.cache import guild_cache
 from handler.database import Database
+from handler.view import ItemLogMessage
 
 _log = logging.getLogger("pepebot")
 
@@ -90,6 +91,7 @@ class PepeBot(commands.Bot):
         self.database: Optional[Database] = None
         self.connected_to_database = asyncio.Event()
         self.connected_to_database.set()
+        self.economy = Economy(bot=self)
 
     def __getattr__(self, item):
         """ called when an attribute called is not exists in class,
@@ -126,12 +128,16 @@ class PepeBot(commands.Bot):
                 'economy',
                 'server',
                 'error handler',
-                'listeners']
+                'listeners',
+                "owner"
+                ]
 
         self.console_log("loading cogs..")
         for cog in COGS:
             await self.load_extension(f"cogs.{cog}")
             self.console_log(f"{cog} loaded ")
+        # add views
+        self.add_view(ItemLogMessage(bot=self))
         self.console_log("setup hook complete")
         await self.tree.sync()
 
@@ -174,7 +180,9 @@ class PepeBot(commands.Bot):
         await self.database.initialize()
         self.db = self.pool = self.database_connection_pool \
             = self.database.database
+        self.economy.database = self.database
         _log.info("database initialised")
+
     # Setup every tables :)
 
     async def database_startup_tasks(self):
@@ -215,6 +223,7 @@ class PepeBot(commands.Bot):
             peep.Channels(channel_id,guild_id)
             """
         )
+
         # store the settings stats
         await self.database.create_table(
             table_name="peep.guild_settings",
@@ -231,6 +240,7 @@ class PepeBot(commands.Bot):
             MemeAdmin          BIGINT,
             customization_time BIGINT DEFAULT 5,
             economy            BOOLEAN DEFAULT FALSE,
+            dm_on_accept       BOOLEAN DEFAULT FALSE,
             FOREIGN KEY (guild_id) REFERENCES
             peep.Guilds(guild_id)
             """
@@ -316,21 +326,25 @@ class PepeBot(commands.Bot):
              peep.Guilds(guild_id) ON DELETE CASCADE
             """
         )
+
         await self.database.create_table(
             table_name="peep.shoplog",
             columns=
             """
-            id           SERIAL PRIMARY KEY,
-            guild_id     BIGINT NOT NULL,
-            user_id      BIGINT NOT NULL,
-            item_name    varchar(256),
-            cost         FLOAT,
-            expired_on   INTERVAL,
+            id                 SERIAL PRIMARY KEY,
+            guild_id           BIGINT NOT NULL,
+            user_id            BIGINT NOT NULL,
+            item_name          varchar(256),
+            cost               FLOAT,
+            expired_on         TIMESTAMP,
+            is_accepted        BOOLEAN DEFAULT FALSE,
+            log_message_id     varchar(256),
             purchased_at TIMESTAMP DEFAULT NOW(),
             FOREIGN KEY  (user_id,guild_id) REFERENCES
             peep.Users(user_id,guild_id)
             """
         )
+
         await self.database.create_table(
             table_name="peep.rolerewards",
             columns=
@@ -341,6 +355,18 @@ class PepeBot(commands.Bot):
             FOREIGN KEY (guild_id) REFERENCES
             peep.Guilds(guild_id) ON DELETE CASCADE,
             UNIQUE            (guild_id,likes)
+            """
+        )
+        await self.database.create_table(
+            table_name="peep.meme_completed_messages",
+            columns=
+            """
+            guild_id             BIGINT,
+            channel_id           BIGINT,
+            message_id           BIGINT UNIQUE,
+            expiry               TIMESTAMP,
+            FOREIGN KEY (guild_id,channel_id) REFERENCES
+            peep.Channels(guild_id,channel_id) ON DELETE CASCADE
             """
         )
         with open(file="botconfig/database/triggers.sql", mode="r") as triggers:
@@ -442,4 +468,3 @@ DB_PASSWORD = os.environ.get('DBPASSWORD')
 HOST = os.environ.get('DBHOST')
 USER = os.environ.get('DBUSER')
 DBNAME = os.environ.get('DBNAME')
-
