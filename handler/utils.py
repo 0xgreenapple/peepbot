@@ -1,24 +1,31 @@
 from __future__ import annotations
 
+import json
+import re
 import math
 import time
 import logging
-from typing import TYPE_CHECKING
+import unicodedata
+from typing import TYPE_CHECKING, List, Optional, Union
+
+import asyncpg
 import discord
 from dateutil.tz import tz
 from discord.ext import commands
+from discord.ext.commands.errors import MissingPermissions, NotOwner
 from discord.ui import Button
 from datetime import datetime, timedelta
 
 from handler.Context import Context
 from handler.errors import RoleNotFound
+
 if TYPE_CHECKING:
-    from pepebot import pepebot
+    from pepebot import PepeBot
     from handler.view import interaction_error_button
 
 
 async def error_embed(
-        bot: pepebot, Interaction: discord.Interaction, title: str = None, *,
+        bot: PepeBot, Interaction: discord.Interaction, title: str = None, *,
         description: str = None, error_name=None, error_dis: str = None,
         colour: discord.Colour = None, timestamp=discord.utils.utcnow()):
     error_emoji = bot.failed_emoji
@@ -29,7 +36,8 @@ async def error_embed(
     if not colour:
         colour = bot.embed_colour
 
-    embed = discord.Embed(title=title, description=description, timestamp=timestamp, colour=colour)
+    embed = discord.Embed(title=title, description=description,
+                          timestamp=timestamp, colour=colour)
 
     if error_name and error_dis:
         error_name = f"__**{error_name}**__"
@@ -38,29 +46,45 @@ async def error_embed(
 
     embed.set_footer(text='\u200b', icon_url=Interaction.user.avatar.url)
     view = interaction_error_button(Interaction)
-    linkbutton = Button(url="https://sussybot.xyz", label="support", style=discord.ButtonStyle.url)
+    linkbutton = Button(url="https://sussybot.xyz", label="support",
+                        style=discord.ButtonStyle.url)
     view.add_item(linkbutton)
     is_done = Interaction.response.is_done()
     if is_done:
         await Interaction.followup.send(embed=embed, view=view, ephemeral=True)
     else:
-        await Interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await Interaction.response.send_message(embed=embed, view=view,
+                                                ephemeral=True)
 
     view.message = await Interaction.original_message()
     return view.message
 
 
-async def send_error(bot: pepebot, ctx, *, msg: str = None) -> discord.Message:
+async def send_error(bot: PepeBot, ctx, *, msg: str = None) -> discord.Message:
     msg = msg if msg else f"something went wrong {bot.spongebob}"
     embed = discord.Embed(description=f"{bot.right} {msg}")
     return await ctx.reply(embed=embed)
 
 
+def record_to_dict(Record: asyncpg.Record) -> dict:
+    return dict(Record.items())
+
+
+def records_to_dict(
+        records: List[asyncpg.Record], remove_single: str = None
+    ) -> List[Union[dict, any]]:
+    data_columns = []
+    for record in records:
+        data_columns.append(
+            record[remove_single] if remove_single else dict[record])
+    return data_columns
+
 async def heloo(ctx: discord.Interaction):
     return await ctx.response.send_message("hello world")
 
 
-async def send_dm(member=discord.Member, *, message: str = None, embed: discord.Embed = None,
+async def send_dm(member=discord.Member, *, message: str = None,
+                  embed: discord.Embed = None,
                   view: discord.ui.View = None):
     logging.warning('create dm')
     channel = await member.create_dm()
@@ -70,7 +94,8 @@ async def send_dm(member=discord.Member, *, message: str = None, embed: discord.
 
 def datetime_to_local_timestamp(utc_datetime):
     now_timestamp = time.time()
-    offset = datetime.fromtimestamp(now_timestamp) - datetime.utcfromtimestamp(now_timestamp)
+    offset = datetime.fromtimestamp(now_timestamp) - datetime.utcfromtimestamp(
+        now_timestamp)
     return round(int(time.mktime((utc_datetime + offset).timetuple())))
 
 
@@ -85,40 +110,27 @@ def format_ns(self, ns):
         return f"{ns} ns"
 
 
-def string_to_delta(input):
-    if input is None:
-        return
-    slice_num = -1
-    slice_object = slice(-1)
-    time_in_delta = None
-    input = input.lower()
-
-    try:
-        int(input[slice_object])
-    except ValueError:
-        return
-
-    if input.endswith('d'):
-        ab = slice(slice_num)
-        a = input[ab]
-        time_in_delta = timedelta(days=int(a))
-    if input.endswith('h'):
-        ab = slice(slice_num)
-        a = input[ab]
-        time_in_delta = timedelta(hours=int(a))
-    if input.endswith('m'):
-        ab = slice(slice_num)
-        a = input[ab]
-        time_in_delta = timedelta(minutes=int(a))
-    if input.endswith('s'):
-        ab = slice(slice_num)
-        a = input[ab]
-        time_in_delta = timedelta(seconds=int(a))
-    time_in_delta = time_in_delta
-    return time_in_delta
+def string_to_delta(Input: str):
+    Input = Input.replace(" ", "")
+    regex = re.compile(r'((?P<hours>\d+?)(hr|h|hour|hours))?'
+                       r'((?P<minutes>\d+?)(m)|min|mins|minutes|minute)?'
+                       r'((?P<seconds>\d+?)(s|sec|secs|second|seconds))?'
+                       r'((?P<days>\d+?)(d|days|day))?'
+                       r'((?P<weeks>\d+?)(w|week|weeks))?'
+                       r'((?P<seconds_alone>\d+))?')
+    group = regex.match(Input)
+    parameters = group.groupdict().items()
+    key_value_pair = {}
+    for key, value in parameters:
+        if key == "seconds_alone" and value is not None:
+            key_value_pair["seconds"] = int(value)
+        elif value:
+            key_value_pair[key] = int(value)
+    return timedelta(**key_value_pair)
 
 
-async def if_user_mememanager(bot: pepebot, ctx: Context, member: discord.Member = None) -> bool:
+async def is_user_mememanager(bot: PepeBot, ctx: Context,
+                              member: discord.Member = None) -> bool:
     """ check if a user is a meme manager """
     member = member if member else ctx.author
     role = await bot.db.fetchval(
@@ -127,7 +139,8 @@ async def if_user_mememanager(bot: pepebot, ctx: Context, member: discord.Member
         """, member.guild.id
     )
     role = ctx.guild.get_role(role) if role else None
-    if member.id == ctx.guild.owner.id or member.id == await bot.is_owner(member):
+    if member.id == ctx.guild.owner.id or member.id == await bot.is_owner(
+            member):
         return True
 
     if role not in member.roles:
@@ -136,16 +149,17 @@ async def if_user_mememanager(bot: pepebot, ctx: Context, member: discord.Member
     return False
 
 
-def is_Meme_manager():
+def is_meme_manager():
     """check if a user have meme manager role
     :raises roleNotfound: user doesn't have the role
     """
+
     async def predicate(ctx: Context) -> bool:
-        role = await ctx.bot.Database.Select(
+        role = await ctx.bot.database.select(
             ctx.guild.id,
-            table="test.setup",
-            columns="mememanager_role",
-            condition="guild_id1 = $1")
+            table_name="peep.guild_settings",
+            columns="MemeAdmin",
+            conditions="guild_id = $1")
         role = ctx.author.get_role(role) if role else None
         if ctx.author.id == ctx.guild.owner.id or \
                 ctx.author.id == await ctx.bot.is_owner(ctx.author):
@@ -157,7 +171,21 @@ def is_Meme_manager():
     return commands.check(predicate)
 
 
-async def user_check_self(bot: pepebot, ctx: Context, member: discord.Member):
+def is_guild_owner():
+    """ check if the user is guild owner """
+
+    async def predicate(ctx: Context) -> bool:
+        if await ctx.bot.is_owner(ctx.author):
+            return True
+        elif ctx.guild.owner_id == ctx.author.id:
+            return True
+        else:
+            raise NotOwner()
+
+    return commands.check(predicate)
+
+
+async def user_check_self(bot: PepeBot, ctx: Context, member: discord.Member):
     if ctx.author.id == member.id or not await bot.is_owner(ctx.author):
         await send_error(
             bot=bot,
@@ -167,7 +195,8 @@ async def user_check_self(bot: pepebot, ctx: Context, member: discord.Member):
 
 
 async def check_perm(
-        ctx: Context, text_channel: discord.TextChannel, user: discord.User = None, *args):
+        ctx: Context, text_channel: discord.TextChannel,
+        user: discord.User = None, *args):
     for i in args:
         print(i)
     # bot = ctx.guild.me
@@ -175,26 +204,25 @@ async def check_perm(
     # perm = channel.permissions_for(bot)
 
 
-def GetRelativeTime(time: timedelta):
-
+def get_relative_time(time: timedelta):
     if time <= timedelta(seconds=59):
         formate = f"{time.total_seconds()} secs"
     elif time <= timedelta(minutes=59):
         formate = f"{round(time.total_seconds() / 60)} mins"
     elif time <= timedelta(hours=24):
-        formate = f"{round(time.total_seconds() / (60*60))} hours"
+        formate = f"{round(time.total_seconds() / (60 * 60))} hours"
     elif time <= timedelta(days=6):
-        formate = f"{math.floor(time.total_seconds() / (60*60*24))} days"
+        formate = f"{math.floor(time.total_seconds() / (60 * 60 * 24))} days"
     elif time <= timedelta(days=31):
-        formate = f"{math.floor(time.total_seconds() / (60*60*24*7))} weeks"
+        formate = f"{math.floor(time.total_seconds() / (60 * 60 * 24 * 7))} weeks"
     elif time <= timedelta(days=365):
-        formate = f"{round(time.total_seconds() / (60*60*24*30))} month"
+        formate = f"{round(time.total_seconds() / (60 * 60 * 24 * 30))} month"
     else:
-        formate = f"{round(time.total_seconds() / (60*60*24*365))} years"
+        formate = f"{round(time.total_seconds() / (60 * 60 * 24 * 365))} years"
     return formate
 
 
-class emojis:
+class Emojis:
     """
     Emoji class for the bot
     some useful emojis attributes
@@ -221,6 +249,8 @@ class emojis:
     document = "<:document:975326725229641781>"
     document_1 = "<:document:975326725787508837>"
     doubleleft = "<:doubleleft:975326725456154644>"
+    doubleright = "<:doubleright:975326725389037568>"
+
     download = "<:download:975326725435162666>"
     glass = "<:glass:975326725472944168>"
     good = "<:good:975326724747304992>"
@@ -233,6 +263,7 @@ class emojis:
     failed_emoji = '<:icons8closewindow100:975326725426778184>'
     success_emoji = '<:icons8ok100:975326724747304992>'
     right = '<:right:975326725158346774>'
+    left = "<:left:975326725565190194>"
     file_emoji = '<:icons8document100:975326725229641781>'
     moderator_emoji = "<:icons8protect100:975326725502296104>"
     spongebob = "<:AYS_sadspongebob:1005427777345949717>"
@@ -247,6 +278,65 @@ class emojis:
     iconsword = '<:SDViconsword:1007685391932981308>'
     samurai = '<:SDVjunimosamurai:1007685493909115040>'
     treasure = '<:SDVitemtreasure:1008374574502658110>'
+
+    def __init__(self, bot):
+        self.bot = bot
+        self.default_emoji_url = (
+            "https://gist.githubusercontent.com"
+            "/Vexs/629488c4bb4126ad2a9909309ed6bd71"
+            "/raw/edd5473221f42ea0f8b9de16545b4b853bf11140"
+            "/emoji_map.json")
+        self.default_emojis: Optional[dict] = None
+        self.custom_emoji_regex = re.compile(
+            r"<(?P<animated>a?):"
+            r"(?P<name>[a-zA-Z0-9_]{2,32}):"
+            r"(?P<id>[0-9]{18,22})>")
+
+    async def initialise(self):
+        self.default_emojis = await self.get_unicode_emojis()
+
+    def get_emoji_id(self, emoji_string: str):
+        emoji = self.custom_emoji_regex.match(emoji_string)
+        if emoji is not None:
+            emoji_metadata = emoji.groupdict()
+            return int(emoji_metadata["id"])
+        return
+
+    @staticmethod
+    def is_default_emoji(string: str) -> bool:
+        if string is None:
+            return False
+        string = string.replace(" ", "")
+        atIndex1 = string[0]
+        if not atIndex1:
+            return False
+        unicode_type = unicodedata.category(atIndex1)
+        if unicode_type == "So":
+            return True
+        return False
+
+    def is_custom_emoji(self, string: str) -> bool:
+        if string is None:
+            return False
+        string = string.replace(" ", "")
+        is_custom_emoji = self.custom_emoji_regex.match(string)
+        return is_custom_emoji is not None
+
+    async def get_unicode_emojis(self) -> Optional[dict]:
+        response = await self.bot.aiohttp_session.get(
+            url=self.default_emoji_url)
+        Json = json.loads(await response.text())
+        print(Json)
+        return Json
+
+    def get_emoji_name(self, unicode_moji: str) -> Optional[str]:
+        emoji_lists = self.default_emojis
+        for name, emoji in emoji_lists.items():
+            if emoji == unicode_moji:
+                return name
+
+    def getEmojiByName(self, name: str) -> Optional[str]:
+        return self.default_emojis.get(name)
 
 
 class Colour:
@@ -264,9 +354,70 @@ class Colour:
     embed_default_colour = 0x00ffad
     dark_theme_colour = 0x36393e
 
-def utc2local(utc: datetime):
+
+def utc_to_local(utc: datetime):
     from_zone = tz.gettz('UTC')
     to_zone = tz.tzlocal()
     utctime = utc.replace(tzinfo=from_zone)
     local = utctime.astimezone(to_zone)
     return local
+
+
+def get_place_holders(max: int):
+    placeholders = ""
+    for i in range(1, max + 1):
+        comma_or_not = ", " if i != max else ""
+        current_holder = f"${i}" + comma_or_not
+        placeholders += current_holder
+    return placeholders
+
+
+def get_key_pair(Keys: List[str], start_at: int = None):
+    """ returns string with their
+    key and value placeholders pair"""
+    key_value_pair = ""
+    Counter = start_at if start_at else 1
+    listCounter = 0
+    for key in Keys:
+        listCounter += 1
+        comma_or_not = ", " if listCounter != len(Keys) else ""
+        current_pair = f"{key} = ${Counter}" + comma_or_not
+        key_value_pair += current_pair
+        Counter += 1
+    return key_value_pair
+
+
+def to_string_list(keys: List[str]):
+    """ return a string made of keys order by order"""
+    key_str = " "
+    Counter = 0
+    for key in keys:
+        Counter += 1
+        comma_or_not = ", " if Counter != len(keys) else ""
+        current_str = key + comma_or_not
+        key_str += current_str
+    return key_str
+
+
+def get_attachments(message: discord.Message, links: bool = False):
+    AllowedTypes = ("image", "video")
+    attachments = message.attachments
+    embeds = message.embeds
+    if (not attachments or len(attachments) == 0) \
+            and (not embeds or len(embeds) == 0):
+        return
+    Resolved_Attachments = []
+    for image in attachments:
+        if image.content_type is None:
+            return Resolved_Attachments
+        if image.content_type.startswith(AllowedTypes):
+            Resolved_Attachments.append(image)
+
+    if links:
+        for embed in embeds:
+            if embed.image:
+                Resolved_Attachments.append(embed.image)
+            elif embed.image:
+                Resolved_Attachments.append(embed.video)
+
+    return Resolved_Attachments
