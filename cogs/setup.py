@@ -23,7 +23,7 @@ from handler.utils import (
     string_to_delta,
     get_place_holders,
     get_key_pair,
-    to_string_list, get_relative_time)
+    to_string_list, get_relative_time, records_to_dict)
 from handler.database import (
     reinitialise_channel_settings,
     reinitialise_guild_settings,
@@ -336,10 +336,11 @@ class Configuration(commands.Cog):
         embed.description = (
             f">>> {self.bot.right} now members with "
             f"{role.mention} will be able to execute "
-            f"all economy commands ")
+            f"all meme and economy commands")
         if role_id is None:
             embed.description = (
-                f">>> {self.bot.right} now economy commands are owner only")
+                f">>> {self.bot.right} meme admin role has been removed, "
+                f"economy and meme commands are now owner only")
         await response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.checks.has_permissions(administrator=True)
@@ -371,7 +372,7 @@ class Configuration(commands.Cog):
                 not channel_settings["is_memechannel"]):
             embed.description = (
                 f">>> {self.bot.right} channel {meme_channel.mention} is "
-                f"not a meme channel pls run commands ``/channelconfig`` to"
+                f"not a meme channel please run commands ``/channelconfig`` to "
                 f"see list of meme channels")
             await response.send_message(embed=embed, ephemeral=True)
             return
@@ -393,6 +394,7 @@ class Configuration(commands.Cog):
                 return
         elif setdefault is not None:
             emoji = self.bot.emoji.like
+            custom_emoji = emoji
         elif remove is not None:
             emoji = '0'
         await self.set_channel_settings(
@@ -434,7 +436,7 @@ class Configuration(commands.Cog):
                 not channel_settings["is_memechannel"]):
             embed.description = (
                 f">>> {self.bot.right} channel {meme_channel.mention} is "
-                f"not a meme channel pls run commands ``/channelconfig`` to"
+                f"not a meme channel please run commands ``/channelconfig`` to "
                 f"see list of meme channels")
             await response.send_message(embed=embed, ephemeral=True)
             return
@@ -456,6 +458,7 @@ class Configuration(commands.Cog):
                 return
         elif setdefault is not None:
             emoji = self.bot.emoji.like
+            custom_emoji = emoji
         elif remove is not None:
             emoji = '0'
         await self.set_channel_settings(
@@ -464,7 +467,7 @@ class Configuration(commands.Cog):
         embed.title = "``updated config``"
         embed.description = f"now bot will react to {custom_emoji}"
         if emoji == '0':
-            embed.description = f"now bot will not able to like messages"
+            embed.description = f"now bot will not able to dislike messages"
 
         await response.send_message(embed=embed, ephemeral=True)
 
@@ -488,7 +491,7 @@ class Configuration(commands.Cog):
         if not give_role.is_assignable():
             embed.description = (
                 f">>> {self.bot.emoji.right} the bot can't" 
-                f"assign the role, whether the role is above " 
+                f"assign this role, whether the role is above " 
                 f"bot role or bot lack permissions to assign it")
             await interaction.response.send_message(embed=embed)
             return
@@ -504,7 +507,7 @@ class Configuration(commands.Cog):
                          "role_id = $3")
         embed.title = "``role added!``"
         embed.description = (
-            f"{give_role.mention} will be assigned to user after"
+            f"{give_role.mention} will be assigned to user after "
             f"reaching ``{at_likes}`` {self.bot.emoji.like}"
         )
         await interaction.response.send_message(embed=embed)
@@ -571,3 +574,37 @@ class Configuration(commands.Cog):
         await interaction.response.send_message(
             embed=embed)
 
+    @setup.command(name="thread_msg")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_thread_message(
+        self, interaction:discord.Interaction,
+        thread_channel: discord.TextChannel,
+        thread_message: app_commands.Range[str, 1, 500],
+        set_default: Literal['true'] = None):
+
+        channel_settings = await get_channel_settings(
+            bot=self.bot, channel=thread_channel)
+        embed = discord.Embed(title="command failed")
+        if channel_settings is None or not channel_settings["is_threadchannel"]:
+            embed.description = (
+                f"Channel {thread_channel} is not a thread channel" 
+                f"please run ``/channelconfig`` to see list of channels "
+                f"in the guild ")
+            await interaction.response.send_message(embed=embed)
+            return
+
+        if set_default is not None:
+            thread_message = None
+
+        await self.edit_channel_settings(
+            channel=interaction.channel,
+            thread_msg=thread_message
+        )
+        embed.title = "``config update``"
+        embed.description = (
+            f"thread message for the channel :{interaction.channel.mention}"
+            f"has been updated to message: ``{thread_message}``"
+        )
+        await interaction.response.send_message(
+            embed=embed
+        )
