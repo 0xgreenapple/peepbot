@@ -490,8 +490,8 @@ class Configuration(commands.Cog):
         embed = discord.Embed(title="``command failed``")
         if not give_role.is_assignable():
             embed.description = (
-                f">>> {self.bot.emoji.right} the bot can't" 
-                f"assign this role, whether the role is above " 
+                f">>> {self.bot.emoji.right} the bot can't"
+                f"assign this role, whether the role is above "
                 f"bot role or bot lack permissions to assign it")
             await interaction.response.send_message(embed=embed)
             return
@@ -577,17 +577,17 @@ class Configuration(commands.Cog):
     @setup.command(name="thread_msg")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_thread_message(
-        self, interaction:discord.Interaction,
-        thread_channel: discord.TextChannel,
-        thread_message: app_commands.Range[str, 1, 500],
-        set_default: Literal['true'] = None):
+            self, interaction: discord.Interaction,
+            thread_channel: discord.TextChannel,
+            thread_message: app_commands.Range[str, 1, 500],
+            set_default: Literal['true'] = None):
 
         channel_settings = await get_channel_settings(
             bot=self.bot, channel=thread_channel)
         embed = discord.Embed(title="command failed")
         if channel_settings is None or not channel_settings["is_threadchannel"]:
             embed.description = (
-                f"Channel {thread_channel} is not a thread channel" 
+                f"Channel {thread_channel} is not a thread channel"
                 f"please run ``/channelconfig`` to see list of channels "
                 f"in the guild ")
             await interaction.response.send_message(embed=embed)
@@ -608,3 +608,101 @@ class Configuration(commands.Cog):
         await interaction.response.send_message(
             embed=embed
         )
+
+    @setup.command(name="youtube_notification")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setup_youtube(
+            self, interaction: discord.Interaction, youtube_channel: str,
+            send_to: discord.TextChannel, upload_ping_role: discord.Role = None,
+            remove: Literal['true'] = None
+    ):
+        channel_id = self.bot.youtube.get_id_from_url(
+            url=youtube_channel)
+        channel_username = self.bot.youtube.get_username_from_url(
+            url=youtube_channel)
+        embed = discord.Embed(title="``command failed``")
+        if not channel_id and not channel_username:
+            channel_id = await self.bot.youtube.get_channel_id(
+                youtube_channel)
+            if channel_id is None:
+                embed.description = (
+                    f">>> {self.bot.right} channel url ``{youtube_channel} is invalid"
+                    "pls provide any of following types: \n"
+                    "``yourusername``"
+                    "``https://youtube.com/c/yourcustomusername`` \n"
+                    "``https://youtube.com/@yourusername`` \n"
+                    "``https://youtube.com/user/yourusername`` \n"
+                    "``https://youtube.com/channel/yourchannelid`` \n"
+                    " for more info please visit [this link]"
+                    "(https://support.google.com/youtube/answer/6180214?hl=en)"
+                )
+                await interaction.response.send_message(embed=embed)
+                return
+
+        if channel_id is None and channel_username:
+            print(channel_id)
+            print(channel_username)
+            channel_id = await self.bot.youtube.get_channel_id(
+                channel_username)
+            if channel_id is None:
+                embed.description = "the url or username you given is invalid"
+                await interaction.response.send_message(
+                    embed=embed
+                )
+                return
+        channel_permissions = send_to.permissions_for(interaction.guild.me)
+        required_permissions = [
+            channel_permissions.send_messages,
+            channel_permissions.embed_links,
+            channel_permissions.view_channel]
+        if not all(required_permissions):
+            embed.description = (
+                f"bot missing permission in channel: ``{send_to.mention}`` : \n"
+                f"make sure bot has following permissions in the channel: "
+                f"``send message,send embed links, view channel``")
+            await interaction.response.send_message(
+                embed=embed,ephemeral=True
+            )
+            return
+
+        to_remove = True if remove == 'true' else False
+        is_already_subscribed = await self.bot.youtube.get_subscribed_channel(
+            chanel_id=channel_id,guild_id = interaction.guild_id
+        )
+        if is_already_subscribed is None and to_remove:
+            embed.description = f">>> you are already not subscribed " \
+                                f"to channel ``{channel_username}``"
+            await interaction.response.send_message(
+                embed=embed,ephemeral=True
+            )
+            return
+        elif to_remove:
+            await self.bot.youtube.unsubscribe_to_channel(
+                channel_id=channel_id, guild_id=interaction.guild_id
+            )
+            embed.title = "``unsubscribed!``"
+            embed.description = ">>> successfully unsubscribed to channel"
+            await interaction.response.send_message(
+                embed=embed, ephemeral=True
+            )
+            return
+        await self.bot.youtube.subscribe_to_channel(
+            channel_id=channel_id, guild_id=interaction.guild_id,
+            upload_id=None
+        )
+        await self.set_guild_settings(
+            guild_id=interaction.guild_id,
+            upload_channel = send_to.id
+        )
+        if upload_ping_role is not None:
+            await self.set_guild_settings(
+                guild_id=interaction.guild_id,
+                upload_ping=upload_ping_role.id
+            )
+
+        embed.title = "``subscribed``"
+        embed.description = (f"subscribed to channel ``{channel_username}``")
+        await interaction.response.send_message(
+            embed=embed
+        )
+

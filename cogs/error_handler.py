@@ -17,13 +17,13 @@ from discord import app_commands
 from handler import utils
 from handler.Context import Context
 from handler.errors import RoleNotFound
-from pepebot import pepebot
+from pepebot import PepeBot
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("pepebot")
 
 
 class error_handler(commands.Cog):
-    def __init__(self, bot: pepebot) -> None:
+    def __init__(self, bot: PepeBot) -> None:
         self.bot = bot
 
     @commands.Cog.listener()
@@ -34,16 +34,16 @@ class error_handler(commands.Cog):
 
         if isinstance(error, commands.NotOwner):
             return
-
         elif isinstance(error, RoleNotFound):
             return
         elif isinstance(error, (commands.CommandNotFound, commands.DisabledCommand)):
             return
-
+        elif isinstance(error, commands.CheckFailure):
+            return
         # handel the command cooldown
         elif isinstance(error, commands.CommandOnCooldown):
             error_dis = f"{ctx.command.name} command is currently on cooldown try again after {round(error.retry_after)} seconds".title()
-            return await ctx.error_embed( description=error_dis)
+            return await ctx.error_embed(description=error_dis)
 
         elif isinstance(error, commands.MissingRequiredArgument):
             name = "missing argument"
@@ -248,6 +248,6 @@ class error_handler(commands.Cog):
                 print('Ignoring exception in command {}:'.format(interaction.command), file=sys.stderr)
                 traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
 
-async def setup(bot: pepebot) -> None:
+async def setup(bot: PepeBot) -> None:
     await bot.add_cog(
         error_handler(bot))
