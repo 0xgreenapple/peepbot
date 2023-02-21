@@ -7,23 +7,25 @@ from __future__ import annotations
 
 import datetime
 import os
+import re
 import logging
 import base64
 import json
 from typing import Optional, Union, List, TYPE_CHECKING
 
+import discord
 from google.oauth2.credentials import Credentials
 from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from discord.ext import tasks
-from handler.database import Database
+from handler.database import Database, get_guild_settings
 from handler.blocking_code import Executor
-
 if TYPE_CHECKING:
     from pepebot import PepeBot
 
-_log = logging.getLogger("pepebot")
+_log = logging.getLogger("youtube")
+from discord.ext.commands import Context
 
 
 class EnvironmentNotFound(Exception):
@@ -164,24 +166,20 @@ class Youtube:
                  dev_key: str = None):
         self.auth = YoutubeAuth(
             public_access=public_access, dev_key=dev_key)
+        self.operational_api = "https://yt.lemnoslife.com/"
         self.public_access = public_access
         self.bot = bot
         self.executor = self.bot.executor
         self.name = "youtube"
         self.api_version_name = "v3"
         self.app = None
-
-    def _run_in_executor(self, func):
-        async def wrapper(*args, **kwargs):
-            return await self.executor.loop.run_in_executor(
-                self.executor.thread_pool_executor,
-                lambda: func(*args, **kwargs)
-            )
-
-        return wrapper
+        self.channel_custom_url_regex = re.compile(
+            "(?:https?:\/\/)?(?:www\.)?youtube\.com\/(""?:@|c\/|user\/)?(\w+)(?:\/.*)?$")
+        self.channel_id_url_regex = re.compile(
+            "^https?://(?:www\.)?youtube\.com/channel/([\w-]+)$")
 
     @staticmethod
-    def _get_valid_iso_formate(iso_string: str):
+    def get_valid_iso_formate(iso_string: str):
         if iso_string.endswith("Z"):
             slice_obj = slice(-1)
             iso_string = iso_string[slice_obj]
@@ -213,7 +211,6 @@ class Youtube:
                 part="snippet,contentDetails",
                 forUsername=channel_name
             ).execute)
-        print(channel_response)
         return channel_response["items"][0]
 
     async def get_channel_by_id(self, channel_id: str):
@@ -224,15 +221,22 @@ class Youtube:
             ).execute)
         return channel_response["items"][0]
 
-    async def get_channel_id(self, channel_id: str):
-        channel = await self.get_channel_by_name(
-            channel_name=channel_id)
-        return channel[0]["id"]
+    async def get_channel_id(self, channel_user_name: str):
+        if not channel_user_name.startswith("@"):
+            channel_user_name = "@"+channel_user_name
+        params = {"handle": channel_user_name}
+        response = await self.bot.aiohttp_session.get(
+            url=self.operational_api + "channels",
+            params=params
+        )
+        json_obj = await response.json()
+        print(json_obj)
+        return json_obj["items"][0]["id"]
 
     async def get_recent_upload(self, channel_name: str,
                                 channel_id: str = None):
         if channel_id is not None:
-            channel = await self.get_channel_id(channel_id=channel_id)
+            channel = await self.get_channel_by_id(channel_id=channel_id)
         else:
             channel = await self.get_channel_by_name(channel_name)
         upload_id = channel["contentDetails"]["relatedPlaylists"]["uploads"]
@@ -243,32 +247,118 @@ class Youtube:
             self.app.videos().list(
                 part="contentDetails,snippet",
                 id=video_id
-        ).execute)
+            ).execute)
         return video["items"][0]
 
-    @tasks.loop(seconds=30)
+    async def append_new_video(self, channel_id, guild_id, upload_id):
+        await self.bot.database.update(
+            channel_id,
+            guild_id,
+            upload_id,
+            table="peep.youtube_uploads",
+            condition="channel_id=$1 AND guild_id = $2",
+            update_set="recent_upload_id=$3"
+        )
+
+    async def subscribe_to_channel(self, channel_id, guild_id, upload_id):
+        await self.bot.database.insert(
+            channel_id,
+            guild_id,
+            upload_id,
+            table="peep.youtube_uploads",
+            columns="channel_id,guild_id,recent_upload_id",
+            values="$1,$2,$3",
+            on_conflicts=
+            "(guild_id) DO UPDATE SET "
+            "channel_id = $1,recent_upload_id =$3"
+        )
+
+    async def unsubscribe_to_channel(self, guild_id):
+        await self.bot.database.delete(
+            guild_id,
+            table="peep.youtube_uploads",
+            condition="guild_id = $1"
+        )
+
+    async def get_subscribed_channel(self, chanel_id, guild_id):
+        return await self.bot.database.select(
+            chanel_id,
+            guild_id,
+            table_name="peep.youtube_uploads",
+            columns="*",
+            conditions="channel_id = $1 AND guild_id = $2"
+        )
+
+    async def get_subscribed_for_guilds(self, guild_id: str):
+        return await self.bot.database.select(
+            guild_id,
+            table_name="peep.youtube_uploads",
+            columns="channel_id",
+            conditions="guild_id=$1",
+        )
+
+    def get_id_from_url(self, url: str):
+        url = url.replace(" ", "")
+        all_ids = self.channel_id_url_regex.findall(url)
+        if len(all_ids) >= 1:
+            return all_ids[0]
+        return None
+
+    def get_username_from_url(self, url: str):
+        url = url.replace(" ", "")
+        all_usernames = self.channel_custom_url_regex.findall(url)
+        if len(all_usernames) >= 1:
+            return all_usernames[0]
+        return None
+
+    @tasks.loop(seconds=60)
     async def watch_for_uploads(self):
-        # channels_from_database = self.bot.cache.get("uploads")
-        # if channels_from_database is None:
-        #     channels_from_database = await self.bot.database.select(
-        #         table_name="peep.youtube_uploads",
-        #         columns="*"
-        #     )
-        #     if channels_from_database is None or len(
-        #             channels_from_database) == 0:
-        #         return
-        channel_recent_upload = await self.get_recent_upload(channel_name="MemesByMemesaurus")
-        print(channel_recent_upload)
-        print(await self.get_video(channel_recent_upload["contentDetails"]["videoId"]))
-        # for channel_data in channels_from_database:
-        #     channel_id = channel_data["channel_id"]
-        #     channel_name = channel_data["channel_name"]
-        #     channel_last_upload = await self.get_video(
-        #         channel_data["recent_upload_id"])
-        #     channel_last_upload_datetime = self._get_valid_iso_formate(
-        #         channel_last_upload["contentDetails"]["videoPublishedAt"])
-        #     recent_uploads = self.get_recent_upload(channel_name=channel_name)
-        #     recent_uploads_datetime = self._get_valid_iso_formate(
-        #         recent_uploads["contentDetails"]["videoPublishedAt"]
-        #     )
-        #     if cha
+        print(1)
+        """ watch for new uploads from channels containing in the database """
+
+        channels = self.bot.cache["uploads"] = (
+            await self.bot.database.select(
+                table_name="peep.youtube_uploads", columns="*",
+                return_all_rows=True
+            )
+        )
+        # check again for the data returned from database
+        if channels is None or len(channels) == 0:
+            return
+
+        for channel_data in channels:
+            # get channel metadata
+            channel_id = channel_data["channel_id"]
+            channel_name = channel_data["channel_name"]
+            channel_guild = channel_data["guild_id"]
+            last_uploaded_video_id = channel_data["recent_upload_id"]
+
+            # get recent uploads from the channel and get id
+            recent_uploads = await self.get_recent_upload(
+                channel_name=channel_name, channel_id=channel_id)
+            recent_upload_id = recent_uploads["contentDetails"]["videoId"]
+
+            if last_uploaded_video_id is None:
+                print("appending")
+                await self.append_new_video(
+                    channel_id=channel_id,
+                    guild_id=channel_guild,
+                    upload_id=recent_upload_id
+                )
+                return
+            if last_uploaded_video_id == recent_upload_id:
+                return
+            await self.append_new_video(
+                channel_id=channel_id, guild_id=channel_guild,
+                upload_id=recent_upload_id
+            )
+            # add get and set algorithm, to prevent from making everytime
+            cached_channels = self.bot.cache.get(key="youtube_channels")
+            cache_channel = cached_channels.get(channel_id)
+            if cache_channel is None:
+                cache_channel = await self.get_channel_by_id(channel_id)
+                cached_channels[channel_id] = cache_channel
+            self.bot.dispatch(
+                "new_video_upload", channel_guild, cache_channel,
+                recent_uploads
+            )
