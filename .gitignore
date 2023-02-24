@@ -164,5 +164,6 @@ main.sqlite
 *.json
 .fleet
 .vscode
-botconfig/logs
+*.log
+
 

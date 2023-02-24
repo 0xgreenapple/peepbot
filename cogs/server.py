@@ -11,7 +11,6 @@ from discord.ext import commands
 from discord.ext.commands import BucketType, cooldown
 
 from handler.context import Context
-from handler.constant import topic1
 
 from handler.view import duel_button
 from pepebot import PepeBot
