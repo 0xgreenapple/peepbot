@@ -7,11 +7,11 @@ from discord.ext import commands
 from discord.ui import Button
 
 if TYPE_CHECKING:
-    from pepebot import pepebot
+    from pepebot import PepeBot
 
 
 class Context(commands.Context):
-    bot: pepebot
+    bot: PepeBot
 
     async def error_embed(
             self, title: str = None, *, description: str = None, error_name=None,

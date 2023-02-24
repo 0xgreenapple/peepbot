@@ -16,8 +16,9 @@ from discord.ext.commands.errors import MissingPermissions, NotOwner
 from discord.ui import Button
 from datetime import datetime, timedelta
 
-from handler.Context import Context
+from handler.context import Context
 from handler.errors import RoleNotFound
+from handler.database import get_guild_settings
 
 if TYPE_CHECKING:
     from pepebot import PepeBot
@@ -155,15 +156,14 @@ def is_meme_manager():
     """
 
     async def predicate(ctx: Context) -> bool:
-        role = await ctx.bot.database.select(
-            ctx.guild.id,
-            table_name="peep.guild_settings",
-            columns="MemeAdmin",
-            conditions="guild_id = $1")
-        role = ctx.author.get_role(role) if role else None
         if ctx.author.id == ctx.guild.owner.id or \
                 ctx.author.id == await ctx.bot.is_owner(ctx.author):
             return True
+        role = await get_guild_settings(ctx.bot, ctx.guild.id)
+        if role is None:
+            return False
+        role = role["memeadmin"]
+        role = ctx.author.get_role(role) if role else None
         if role:
             return True
         raise RoleNotFound()
@@ -192,16 +192,6 @@ async def user_check_self(bot: PepeBot, ctx: Context, member: discord.Member):
             ctx=ctx,
             msg="you cant add point to yourself, only owner can do it :o ")
         return
-
-
-async def check_perm(
-        ctx: Context, text_channel: discord.TextChannel,
-        user: discord.User = None, *args):
-    for i in args:
-        print(i)
-    # bot = ctx.guild.me
-    # channel = text_channel
-    # perm = channel.permissions_for(bot)
 
 
 def get_relative_time(time: timedelta):
@@ -250,6 +240,7 @@ class Emojis:
     document_1 = "<:document:975326725787508837>"
     doubleleft = "<:doubleleft:975326725456154644>"
     doubleright = "<:doubleright:975326725389037568>"
+    slash = "<:slash:1001503530240192522>"
 
     download = "<:download:975326725435162666>"
     glass = "<:glass:975326725472944168>"
@@ -326,7 +317,6 @@ class Emojis:
         response = await self.bot.aiohttp_session.get(
             url=self.default_emoji_url)
         Json = json.loads(await response.text())
-        print(Json)
         return Json
 
     def get_emoji_name(self, unicode_moji: str) -> Optional[str]:

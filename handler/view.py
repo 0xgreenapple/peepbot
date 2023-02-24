@@ -1,6 +1,8 @@
+from __future__ import annotations
 import argparse
 import asyncio
 import io
+import logging
 import random
 import shlex
 from typing import Optional, TYPE_CHECKING
@@ -11,7 +13,14 @@ import os
 
 from discord.ui import View
 from datetime import datetime, timedelta
-import pepebot
+
+from handler.database import get_guild_settings
+from handler.utils import Emojis
+
+if TYPE_CHECKING:
+    from pepebot import PepeBot
+
+_log = logging.getLogger("pepebot")
 
 
 class Arguments(argparse.ArgumentParser):
@@ -24,7 +33,7 @@ class duel_button(discord.ui.View):
                  message: discord.Message,
                  member: discord.Member,
                  user: discord.Member,
-                 bot: pepebot
+                 bot: PepeBot
                  ):
         super().__init__(timeout=10 * 60)
 
@@ -65,9 +74,12 @@ class duel_button(discord.ui.View):
                 if i['id'] == f'{memeid}':
                     image = await session.get(url=i['url'])
                     image_byets = await image.read()
-                    file = discord.File(fp=io.BytesIO(image_byets), filename='meme.png')
-                    view = ready_button(message=self.message, member=self.member, user=self.user,
-                                        bot=self.bot, embed=embed, ids=ids, memes=memes)
+                    file = discord.File(fp=io.BytesIO(image_byets),
+                                        filename='meme.png')
+                    view = ready_button(message=self.message,
+                                        member=self.member, user=self.user,
+                                        bot=self.bot, embed=embed, ids=ids,
+                                        memes=memes)
                     await self.message.edit(
                         content=None,
                         embed=embed,
@@ -86,23 +98,28 @@ class duel_button(discord.ui.View):
             view.add_item(url)
             if interaction.message.channel.type == discord.ChannelType.private:
                 await interaction.message.delete()
-                await interaction.followup.send(f'you are ready,lets move!', view=view, ephemeral=True)
+                await interaction.followup.send(f'you are ready,lets move!',
+                                                view=view, ephemeral=True)
         else:
 
-            await interaction.response.send_message('this is not for you', ephemeral=True)
+            await interaction.response.send_message('this is not for you',
+                                                    ephemeral=True)
 
     @discord.ui.button(label='cancel', style=discord.ButtonStyle.danger)
     async def cancel(self, interaction: discord.Interaction, button):
         if interaction.user.id == self.member.id:
             int_message = interaction.message
 
-            await self.message.edit(content=f'{interaction.user.mention} rejected the invite find another participant!',
-                                    view=None)
+            await self.message.edit(
+                content=f'{interaction.user.mention} rejected the invite find another participant!',
+                view=None)
             if interaction.message.channel.type == discord.ChannelType.private:
                 await interaction.message.delete()
-                await interaction.response.send_message('successfully canceled the match', ephemeral=True)
+                await interaction.response.send_message(
+                    'successfully canceled the match', ephemeral=True)
         else:
-            await interaction.response.send_message('this is not for you', ephemeral=True)
+            await interaction.response.send_message('this is not for you',
+                                                    ephemeral=True)
 
     async def on_timeout(self) -> None:
         try:
@@ -119,15 +136,18 @@ class duel_button(discord.ui.View):
             )
             await self.interaction_message.edit(embed=embed, view=None)
             await self.message.edit(embed=embed1, content=None)
-        
+
         except:
             pass
 
-    async def on_error(self, interaction: discord.Interaction, error: Exception, item) -> None:
+    async def on_error(self, interaction: discord.Interaction, error: Exception,
+                       item) -> None:
         if not interaction.response.is_done():
-            await interaction.response.send_message('something went wrong', ephemeral=True)
+            await interaction.response.send_message('something went wrong',
+                                                    ephemeral=True)
         else:
-            await interaction.followup.send('something went wrong', ephemeral=True)
+            await interaction.followup.send('something went wrong',
+                                            ephemeral=True)
 
 
 class ready_button(discord.ui.View):
@@ -135,7 +155,7 @@ class ready_button(discord.ui.View):
                  message: discord.Message,
                  member: discord.Member,
                  user: discord.Member,
-                 bot: pepebot.pepebot,
+                 bot: PepeBot,
                  embed: discord.Embed,
                  ids: list,
                  memes: list
@@ -151,7 +171,8 @@ class ready_button(discord.ui.View):
 
         self.embed_msg = embed
 
-    async def get_player_img(self, memeid, message2, message3: str = None, *, url):
+    async def get_player_img(self, memeid, message2, message3: str = None, *,
+                             url):
         res: aiohttp.ClientSession = self.bot.aiohttp_session
 
         members = []
@@ -183,7 +204,8 @@ class ready_button(discord.ui.View):
         file = discord.File(fp=io.BytesIO(bytes), filename='meme.png')
         return file
 
-    async def load_img(self, interaction: discord.Interaction, voting_time: int, customization_time: int):
+    async def load_img(self, interaction: discord.Interaction, voting_time: int,
+                       customization_time: int):
 
         # bot session
         session: aiohttp.ClientSession = self.bot.aiohttp_session
@@ -236,7 +258,8 @@ class ready_button(discord.ui.View):
             member_channel = await self.member.create_dm()
             user_channel = await self.user.create_dm()
         except discord.Forbidden or discord.HTTPException:
-            await self.message.channel.send('dm is turned off, i cant send invite.. \n aborting the game')
+            await self.message.channel.send(
+                'dm is turned off, i cant send invite.. \n aborting the game')
             await self.message.delete()
             return
 
@@ -278,11 +301,13 @@ class ready_button(discord.ui.View):
 
         file = discord.File(fp=io.BytesIO(bytes), filename='memme.png')
 
-        t_one = await thread_one.send(content=f'{self.member.mention}', file=file, embed=sendembed)
+        t_one = await thread_one.send(content=f'{self.member.mention}',
+                                      file=file, embed=sendembed)
 
         file = discord.File(fp=io.BytesIO(bytes), filename='memme.png')
 
-        t_two = await thread_two.send(content=f'{self.user.mention}', file=file, embed=sendembed)
+        t_two = await thread_two.send(content=f'{self.user.mention}', file=file,
+                                      embed=sendembed)
 
         checks = []
         users_msg = []
@@ -331,7 +356,8 @@ class ready_button(discord.ui.View):
             return len(checks) == 2
 
         try:
-            await self.bot.wait_for(f'message', timeout=customization_time * 60, check=check)
+            await self.bot.wait_for(f'message', timeout=customization_time * 60,
+                                    check=check)
         except asyncio.TimeoutError:
             if len(users) != 0:
                 user_id = users[0]['id']
@@ -432,8 +458,9 @@ class ready_button(discord.ui.View):
 
         )
         await second_submission.add_reaction("<:pvote:1004443231762776114>")
-        embeed = discord.Embed(title=f'your meme has been submitted in {self.message.channel.name} '
-                                     f'deleting channel in 3 sec ...')
+        embeed = discord.Embed(
+            title=f'your meme has been submitted in {self.message.channel.name} '
+                  f'deleting channel in 3 sec ...')
 
         await t_one.edit(embeds=[embeed], attachments=[], view=None)
         await t_two.edit(embeds=[embeed], attachments=[], view=None)
@@ -477,8 +504,9 @@ class ready_button(discord.ui.View):
                     memeid=memeid, message2=users[0]['message'],
                     url=caption_url
                 )
-                await announcement.send(content=f'{self.user.mention} has won the duel by {count1 - count2} votes!',
-                                        file=first_user_submission)
+                await announcement.send(
+                    content=f'{self.user.mention} has won the duel by {count1 - count2} votes!',
+                    file=first_user_submission)
             await self.bot.db.execute(
                 """
                 INSERT INTO peep.leaderboard(user_id1,guild_id1,likes)
@@ -500,8 +528,9 @@ class ready_button(discord.ui.View):
                     memeid=memeid, message2=users[0]['message'],
                     url=caption_url
                 )
-                await announcement.send(content=f'{self.member.mention} has won by {count2 - count1} votes',
-                                        file=second_user_submission)
+                await announcement.send(
+                    content=f'{self.member.mention} has won by {count2 - count1} votes',
+                    file=second_user_submission)
             await self.bot.db.execute(
                 """
                 INSERT INTO peep.leaderboard(user_id1,guild_id1,likes)
@@ -511,8 +540,10 @@ class ready_button(discord.ui.View):
                 """, self.member.id, interaction.guild.id, count2
             )
         else:
-            await first_submission.edit(content=f'{self.member.mention}! no one won that was a draw votes:{count1}')
-            await second_submission.edit(content=f'{self.user.mention}! no one won that was a draw votes:{count2}')
+            await first_submission.edit(
+                content=f'{self.member.mention}! no one won that was a draw votes:{count1}')
+            await second_submission.edit(
+                content=f'{self.user.mention}! no one won that was a draw votes:{count2}')
             await self.bot.db.execute(
                 """
                 INSERT INTO peep.leaderboard(user_id1,guild_id1,likes)
@@ -561,7 +592,8 @@ class ready_button(discord.ui.View):
                         True, self.message.id
                     )
                 else:
-                    await interaction.followup.send('you are already ready', ephemeral=True)
+                    await interaction.followup.send('you are already ready',
+                                                    ephemeral=True)
 
             if interaction.user.id == member.id:
                 if not member1:
@@ -570,7 +602,8 @@ class ready_button(discord.ui.View):
                         True, self.message.id
                     )
                 else:
-                    await interaction.followup.send('you are already ready', ephemeral=True)
+                    await interaction.followup.send('you are already ready',
+                                                    ephemeral=True)
 
             text = []
 
@@ -615,7 +648,9 @@ class ready_button(discord.ui.View):
                                       description=f'>>> you have {custimastion_time} min to make best meme **check '
                                                   f'your dms**')
                 await self.message.edit(embed=embed, view=None)
-                await self.load_img(interaction, customization_time=custimastion_time, voting_time=vote_time)
+                await self.load_img(interaction,
+                                    customization_time=custimastion_time,
+                                    voting_time=vote_time)
 
             else:
                 text1 = '\n'.join(text)
@@ -625,17 +660,21 @@ class ready_button(discord.ui.View):
 
                 await self.message.edit(embed=embed)
         else:
-            await interaction.response.send_message(f'this is not for you!', ephemeral=True)
+            await interaction.response.send_message(f'this is not for you!',
+                                                    ephemeral=True)
 
-    @discord.ui.button(label='refresh', style=discord.ButtonStyle.green, custom_id='refresh')
+    @discord.ui.button(label='refresh', style=discord.ButtonStyle.green,
+                       custom_id='refresh')
     async def refresh(self, interaction: discord.Interaction, button):
         await interaction.response.defer()
         session = self.bot.aiohttp_session
         memeid = random.choice(self.ids)
-        user_refresh = await self.bot.db.fetchval("""SELECT r_user_ready FROM peep.duel WHERE message_id = $1""",
-                                                  self.message.id)
-        member_refresh = await self.bot.db.fetchval("""SELECT r_member_ready FROM peep.duel WHERE message_id = $1""",
-                                                    self.message.id)
+        user_refresh = await self.bot.db.fetchval(
+            """SELECT r_user_ready FROM peep.duel WHERE message_id = $1""",
+            self.message.id)
+        member_refresh = await self.bot.db.fetchval(
+            """SELECT r_member_ready FROM peep.duel WHERE message_id = $1""",
+            self.message.id)
         member1 = await self.bot.db.fetchval(
             """
             SELECT user_ready
@@ -655,36 +694,48 @@ class ready_button(discord.ui.View):
 
             if not member1 or member_refresh or not user_refresh:
                 self.bot.loop.create_task(
-                    self.bot.db.execute("""UPDATE peep.duel SET r_user_ready = $1 WHERE message_id = $2""",
-                                        True, self.message.id)
+                    self.bot.db.execute(
+                        """UPDATE peep.duel SET r_user_ready = $1 WHERE message_id = $2""",
+                        True, self.message.id)
                 )
-                await interaction.followup.send('the other user must also have to refresh to work', ephemeral=True)
-                message = await interaction.channel.fetch_message(self.message.id)
+                await interaction.followup.send(
+                    'the other user must also have to refresh to work',
+                    ephemeral=True)
+                message = await interaction.channel.fetch_message(
+                    self.message.id)
                 embed = message.embeds[0]
                 embed.description = f"{embed.description} \n {interaction.user.mention} requested for refresh"
                 await self.message.edit(embed=embed)
             else:
-                await interaction.followup.send('you cant refresh any more', ephemeral=True)
+                await interaction.followup.send('you cant refresh any more',
+                                                ephemeral=True)
 
         if interaction.user.id == self.user.id:
 
             if not use1r or user_refresh or not member_refresh:
                 self.bot.loop.create_task(
-                    self.bot.db.execute("""UPDATE peep.duel SET r_member_ready = $1 WHERE message_id = $2""",
-                                        True, self.message.id)
+                    self.bot.db.execute(
+                        """UPDATE peep.duel SET r_member_ready = $1 WHERE message_id = $2""",
+                        True, self.message.id)
                 )
-                await interaction.followup.send('the other user must also have to refresh to work', ephemeral=True)
-                message = await interaction.channel.fetch_message(self.message.id)
+                await interaction.followup.send(
+                    'the other user must also have to refresh to work',
+                    ephemeral=True)
+                message = await interaction.channel.fetch_message(
+                    self.message.id)
                 embed = message.embeds[0]
                 embed.description = f"{embed.description} \n {interaction.user.mention} requested for refresh"
                 await self.message.edit(embed=embed)
             else:
-                await interaction.followup.send('you cant refresh any more', ephemeral=True)
+                await interaction.followup.send('you cant refresh any more',
+                                                ephemeral=True)
 
-        user_refresh = await self.bot.db.fetchval("""SELECT r_user_ready FROM peep.duel WHERE message_id = $1""",
-                                                  self.message.id)
-        member_refresh = await self.bot.db.fetchval("""SELECT r_member_ready FROM peep.duel WHERE message_id = $1""",
-                                                    self.message.id)
+        user_refresh = await self.bot.db.fetchval(
+            """SELECT r_user_ready FROM peep.duel WHERE message_id = $1""",
+            self.message.id)
+        member_refresh = await self.bot.db.fetchval(
+            """SELECT r_member_ready FROM peep.duel WHERE message_id = $1""",
+            self.message.id)
         if member_refresh and user_refresh:
             for i in self.memes:
                 if i['id'] == f'{memeid}':
@@ -694,7 +745,8 @@ class ready_button(discord.ui.View):
                     item = discord.utils.get(self.children, custom_id="refresh")
                     view.remove_item(item)
 
-                    file = discord.File(fp=io.BytesIO(image_byets), filename='memme.png')
+                    file = discord.File(fp=io.BytesIO(image_byets),
+                                        filename='memme.png')
                     message1 = await self.message.edit(
                         attachments=[file], view=view
                     )
@@ -722,22 +774,25 @@ class ready_button(discord.ui.View):
         except:
             print('yes')
         else:
-            await self.message.channel.send(f'aborting the battle {self.user.mention} {self.member.mention}')
+            await self.message.channel.send(
+                f'aborting the battle {self.user.mention} {self.member.mention}')
 
-    async def on_error(self, interaction: discord.Interaction, error: Exception, item) -> None:
+    async def on_error(self, interaction: discord.Interaction, error: Exception,
+                       item) -> None:
         if not interaction.response.is_done():
-            await interaction.response.send_message('something went wrong', ephemeral=True)
+            await interaction.response.send_message('something went wrong',
+                                                    ephemeral=True)
         else:
-            await interaction.followup.send('something went wrong', ephemeral=True)
+            await interaction.followup.send('something went wrong',
+                                            ephemeral=True)
 
 
 class interaction_delete_view(discord.ui.View):
     def __init__(
             self,
             ctx: discord.Interaction,
-
     ):
-        super().__init__(timeout=180)
+        super().__init__(timeout=60)
         self.ctx: discord.Interaction = ctx
         self.message: Optional[discord.Message] = None
 
@@ -750,7 +805,8 @@ class interaction_delete_view(discord.ui.View):
                 await interaction.message.delete()
                 return
             else:
-                await interaction.response.send_message('this is not for you lol', ephemeral=True)
+                await interaction.response.send_message('this is not for you',
+                                                        ephemeral=True)
 
     async def on_timeout(self) -> None:
         for item in self.children:
@@ -778,7 +834,8 @@ class interaction_error_button(discord.ui.View):
             await interaction.response.send_message("no help?")
             return
         else:
-            await interaction.response.send_message('this is not for you lol', ephemeral=True)
+            await interaction.response.send_message('this is not for you lol',
+                                                    ephemeral=True)
 
     async def on_timeout(self) -> None:
         for item in self.children:
@@ -792,7 +849,7 @@ class interaction_error_button(discord.ui.View):
 class accept_bought(discord.ui.View):
     def __init__(
             self,
-            bot: pepebot.pepebot,
+            bot: pepebot.PepeBot,
             item: str,
             user: discord.Member
 
@@ -806,15 +863,17 @@ class accept_bought(discord.ui.View):
     async def accept(self, interaction: discord.Interaction, button):
         if interaction.user.id == interaction.guild.owner.id or interaction.user.id == 888058231094665266:
             await interaction.response.defer(ephemeral=True)
-            await self.bot.db.execute('DELETE FROM peep.inv WHERE user_id = $1 AND guild_id=$2 AND items = $3 ',
-                                      self.user_id.id, self.user_id.guild.id, self.item_name)
+            await self.bot.db.execute(
+                'DELETE FROM peep.inv WHERE user_id = $1 AND guild_id=$2 AND items = $3 ',
+                self.user_id.id, self.user_id.guild.id, self.item_name)
 
             await interaction.delete_original_message()
             await interaction.followup.send('done')
 
             return
         else:
-            await interaction.response.send_message('only owner can do it', ephemeral=True)
+            await interaction.response.send_message('only owner can do it',
+                                                    ephemeral=True)
 
     @discord.ui.button(label='cancel', style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button):
@@ -823,29 +882,31 @@ class accept_bought(discord.ui.View):
             await interaction.response.send_message('done', ephemeral=True)
             return
         else:
-            await interaction.followup.send_message('only owner can do it', ephemeral=True)
+            await interaction.followup.send_message('only owner can do it',
+                                                    ephemeral=True)
 
 
 class thread_channel(discord.ui.View):
     def __init__(
             self,
-            user: discord.Member
-
-    ):
+            user: discord.Member):
         super().__init__(timeout=1440 * 60)
         self.user = user
+        self.message: Optional[discord.Message] = None
 
     @discord.ui.button(label='archive thread', style=discord.ButtonStyle.green)
     async def archive(self, interaction: discord.Interaction, button):
-        if interaction.user.id == self.user.id or interaction.user.guild_permissions.manage_threads:
+        hasManageThreadPermission = interaction.user.guild_permissions.manage_threads
+        if interaction.user.id == self.user.id or hasManageThreadPermission:
             await interaction.response.defer(ephemeral=True)
             channel = interaction.channel
             if channel.type == discord.ChannelType.public_thread:
                 await channel.edit(archived=True)
-            await interaction.delete_original_message()
+            await interaction.delete_original_response()
             return
         else:
-            await interaction.response.send_message('this is not for you lol', ephemeral=True)
+            await interaction.response.send_message('this is not for you',
+                                                    ephemeral=True)
 
     async def on_timeout(self) -> None:
         for item in self.children:
@@ -854,3 +915,134 @@ class thread_channel(discord.ui.View):
                 await self.message.edit(view=self)
             except discord.NotFound:
                 pass
+
+
+class ItemLogMessage(discord.ui.View):
+    def __init__(self, bot: PepeBot):
+        super().__init__(timeout=None)
+        self.message: Optional[discord.Message] = None
+        self.log_id = None
+        self.bot = bot
+
+    @discord.ui.button(
+        label="accept",
+        custom_id="log_view:accept",
+        style=discord.ButtonStyle.green
+    )
+    async def accept_btn(
+            self, interaction: discord.Interaction, button: discord.Button
+    ):
+
+        if interaction.user.id != interaction.guild.owner_id:
+            await interaction.response.send_message(
+                "sorry this is owner only")
+            return
+
+        await interaction.response.defer(thinking=True, ephemeral=True)
+
+        if self.log_id is None:
+            self.log_id = f"{interaction.message.channel.id}:{interaction.message.id}"
+        log_data = await self.bot.database.update(
+            True,
+            self.log_id,
+            table="peep.shoplog",
+            update_set="is_accepted=$1",
+            condition="log_message_id =$2",
+            returning_columns=["*"]
+        )
+
+        user_id = log_data["user_id"]
+        user_to_member = interaction.guild.get_member(user_id)
+        item_name = log_data["item_name"]
+        guild_settings = await get_guild_settings(
+            bot=self.bot, guild_id=interaction.guild_id)
+        await self.bot.economy.remove_user_items(
+            user=user_to_member,
+            item_name=item_name
+        )
+
+        await interaction.followup.send(
+            "item has been removed from the "
+            "user inventory because it's accepted"
+        )
+        await interaction.message.edit(view=None)
+        if not guild_settings["dm_on_accept"]:
+            embed = discord.Embed(
+                description=f"your item: {item_name} has been accepted!\n"
+            )
+            dm_channel = await user_to_member.create_dm()
+            try:
+                await dm_channel.send(embed=embed)
+            except discord.Forbidden:
+                _log.error(f"failed to dm member "
+                           f"{user_to_member.name} in {interaction.guild.name} ")
+
+
+class SetupHelpCommand(discord.ui.Select):
+    def __init__(self):
+        # Set the options that will be presented inside the dropdown
+        options = [
+            discord.SelectOption(
+                label='Meme listener',
+                description='show help command related to setting '
+                            'up gallery and memes',
+                emoji=Emojis.like, value='1'),
+            discord.SelectOption(
+                label='Thread listener',
+                description='show help related to setting up thread channel',
+                emoji=Emojis.channel, value='2'),
+        ]
+        super().__init__(placeholder='Choose a option',
+                         min_values=1, max_values=1, options=options)
+        self.embed = discord.Embed()
+
+    def get_thread_help_embed(self):
+        self.embed.title = f"{Emojis.discord_emoji} thread channel"
+        self.embed.description = (
+            f"{Emojis.right} to setup auto thread for a specific channel run following commands \n \n"
+            f">>> {Emojis.slash} **setup guild_settings ``option``: thread_listener ``turn``:on ** :"
+            f" turn the setting on or off for the whole guild, default set to off \n"
+            f"{Emojis.slash} **setup channel_settings ``channel:`` any channel ``option``: thread_lstnr turn:on** :"
+            f" set up a thread listener for given channel now bot will create threads \n"
+            f"to turn off the thread system just set the setting to off"
+        )
+        return self.embed
+
+    def get_meme_help_embed(self):
+        self.embed.title=f"{Emojis.discord_emoji} meme help"
+        self.embed.description = (
+            f"{Emojis.right} to setup meme listener for a specific channel run following commands \n \n"
+            f">>> {Emojis.slash} **setup guild_settings ``option``: meme_listener ``turn``:on ** :"
+            f" turn the setting on or off for the whole guild, default set to off \n"
+            f"{Emojis.slash} **setup channel_settings ``channel:`` any channel ``option``: meme_lstnr turn:on** :"
+            f" set meme listener on for specific channel \n"
+            f"{Emojis.slash} **setup edit_meme_channel ``channel``:meme channel ``option``: next_gallery_channel**:"
+            f" setup a gallery channel where memes will move to after reaching certain likes \n"
+            f"{Emojis.slash} **setup edit_meme_channel ``channel``: meme channel ``option``max_likes:**"
+            f" setup maximum likes needed to get to next gallery channel \n"
+            f"{Emojis.slash} **setup rewards_role ``at_like``: max likes ``give_role``:role :"
+            f"** setup a reward role at certain likes"
+        )
+        return self.embed
+
+    async def callback(self, interaction: discord.Interaction):
+        # Use the interaction object to send a response message containing
+        # the user's favourite colour or choice. The self object refers to the
+        # Select object, and the values attribute gets a list of the user's
+        # selected options. We only want the first one.
+        embed = None
+        if self.values[0] == '1':
+            embed = self.get_meme_help_embed()
+        elif self.values[0] == '2':
+            embed = self.get_thread_help_embed()
+
+        await interaction.response.edit_message(
+            embed=embed)
+
+
+class DropdownView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=3600)
+
+        # Adds the dropdown to our view object.
+        self.add_item(SetupHelpCommand())

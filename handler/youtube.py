@@ -313,7 +313,6 @@ class Youtube:
 
     @tasks.loop(seconds=60)
     async def watch_for_uploads(self):
-        print(1)
         """ watch for new uploads from channels containing in the database """
 
         channels = self.bot.cache["uploads"] = (

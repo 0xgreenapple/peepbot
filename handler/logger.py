@@ -40,7 +40,7 @@ class Logger:
                  loggers: Optional[dict] = None,
                  output: Optional[TextIO] = sys.stderr,
                  encoding: str = 'utf-8',
-                 max_bytes: int = 32 * 1024 * 1024,
+                 max_bytes: int = 5 * 1024 * 1024,
                  backup_count: int = 5,
                  formatter: logging.Formatter = None,
                  is_console_handler: bool = False,

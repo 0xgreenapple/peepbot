@@ -1,24 +1,20 @@
+"""
+:Author: 0xgreenapple(xgreenpple)
+:Copyright: (c) 2022-present 0xgreenapple
+:Licence: MIT.
+"""
+
 from __future__ import annotations
 
-import asyncio
 
 import asyncpg
-
-from handler.utils import record_to_dict
-
-"""
-economy class for peepbot
-~~~~~~~~~~~~~~~~~~~
-:copyright: (c) xgreenapple(green apple)
-:license: MIT see LICENSE for more details
-"""
-
 import datetime
 from datetime import timedelta, datetime
 import typing
 from typing import TYPE_CHECKING, Optional, Tuple, List, Union
 import discord
 
+from handler.utils import record_to_dict
 from handler.database import Database, get_guild_settings
 from handler.errors import (
     NotEnoughCoins,
@@ -262,7 +258,7 @@ class Economy:
     ):
         """ add a item to shop """
 
-        expired = datetime.timedelta(seconds=seconds) if seconds else None
+        expired = timedelta(seconds=seconds) if seconds else None
         await self.database.insert(
             guild_id,
             name,
@@ -462,7 +458,7 @@ class Economy:
         if not data:
             raise ItemNotFound
         # get the expires time of the booster
-        expiring_time: datetime.timedelta = data['expired']
+        expiring_time: timedelta = data['expired']
         total_seconds = expiring_time.total_seconds()
         await self.add_shop_item(
             guild_id=guild_id, name=data["item_name"],

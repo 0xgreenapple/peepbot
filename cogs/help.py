@@ -2,20 +2,13 @@ import discord
 from discord.ext import commands
 from discord.ext.commands import BucketType, cooldown
 
-from handler.Context import Context
-from handler.pagination import SimplePages
-from pepebot import pepebot
+from handler.context import Context
+from pepebot import PepeBot
 
-
-class leaderboard(SimplePages):
-    def __init__(self, entries: list, *, ctx: Context, per_page: int = 12, title: str = None):
-        converted = entries
-        print(entries)
-        super().__init__(converted, per_page=per_page, ctx=ctx)
 
 
 class help(commands.Cog):
-    def __init__(self, bot: pepebot) -> None:
+    def __init__(self, bot: PepeBot) -> None:
         self.bot = bot
 
     @commands.command(name='help')
@@ -77,6 +70,6 @@ class help(commands.Cog):
         await ctx.send(embed=embed)
 
 
-async def setup(bot: pepebot) -> None:
+async def setup(bot: PepeBot) -> None:
     await bot.add_cog(
         help(bot))

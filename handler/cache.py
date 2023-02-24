@@ -46,7 +46,7 @@ class Cache(defaultdict):
         return self.clear()
 
 
-class guild_cache(Cache):
+class GuildCache(Cache):
     """ subclass of dict object """
 
     def __init__(self):
@@ -61,7 +61,7 @@ class guild_cache(Cache):
         cached_guild = self.guilds.get(guild_id)
         if cached_guild is None:
             self.set_guild(guild_id=guild_id)
-            return None
+            return self.guilds.get(guild_id)
         return cached_guild
 
     def get_from_guild(self, guild_id: int, key) -> Optional[any]:

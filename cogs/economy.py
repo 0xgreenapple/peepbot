@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Literal, Optional
 if TYPE_CHECKING:
     from pepebot import PepeBot
 
-from handler.Context import Context
+from handler.context import Context
 from handler.utils import (
     send_error,
     is_user_mememanager,
@@ -175,7 +175,7 @@ class economy(commands.Cog):
     @commands.command(name='balance', aliases=['bal', 'points'])
     async def balance(self, ctx: Context, user: discord.Member = None):
         """ check inventory points and user stats in the guild """
-        member = user if user else ctx.author
+        member = user if user is not None else ctx.author
         embed = discord.Embed(
             title='``stats``', colour=discord.Colour.blurple(),
             timestamp=discord.utils.utcnow())
@@ -191,10 +191,11 @@ class economy(commands.Cog):
                 f'{self.bot.emoji.coin} **total points:** 0')
             await ctx.send(embed=embed)
             return
-
-        embed.title = f'>>> {self.bot.right} user: {user.mention} '
+        message = f"{self.bot.right} user: {member.mention} \n"
+        if user is None:
+            message = ""
         embed.description = f"""
-        >>>  {self.bot.emoji.coin} **total points:** {user_points} 
+        >>>  {message}{self.bot.emoji.coin} **total points:** {user_points} 
              {self.bot.emoji.iconsword} **rank:#**{user_position} 
              {self.bot.emoji.samurai} **{user if user else ""} is top:** {top_rank}
         """
@@ -383,7 +384,7 @@ class economy(commands.Cog):
         except ItemNotFound:
             embed.description = (
                 f'{self.bot.right} item {item} doesnt not exists' 
-                f',pls check ``{self.bot.command_prefix}shop``')
+                f',pls check ``{await self.bot.get_prefix(ctx.message)}shop``')
             await ctx.send(embed=embed)
             return
         except BadRequest:

@@ -161,9 +161,8 @@ main.sqlite
 *.gif
 *.DS_Store
 .idea
-botconfig
-botconfig/
 *.json
 .fleet
 .vscode
+botconfig/logs
 

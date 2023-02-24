@@ -4,6 +4,7 @@
 :Copyright: 2022-present 0xgreenapple
 """
 
+import re
 import asyncio
 import secrets
 import logging
@@ -14,7 +15,7 @@ from typing import Union
 import discord
 from discord.ext import commands
 
-from handler.Context import Context
+from handler.context import Context
 from handler.database import (
     get_channel_settings,
     get_guild_settings
@@ -74,7 +75,7 @@ class Listeners(commands.Cog):
         }
         guild_cache["memes"][message.id] = message_obj
 
-    def get_cached_message(self, guild_id, message_id):
+    def get_cached_memes(self, guild_id, message_id):
         """ return message from bot cache """
         memes = self.bot.cache.get_from_guild(guild_id, "memes")
         if memes is None:
@@ -97,6 +98,13 @@ class Listeners(commands.Cog):
             message_id=message.id
         )
         self.bot.loop.create_task(to_insert)
+
+    def is_oc_message(self, message: discord.Message):
+        OC_match_regex = re.compile(
+            r"^\s*([\[(])?\s*(oc|original content)\s*([\])])?(\W|$)",
+            re.IGNORECASE)
+        match = OC_match_regex.match(message.content)
+        return match is not None
 
     async def is_completed_meme(self, message: discord.Message):
         """ check from the database the meme"""
@@ -147,8 +155,8 @@ class Listeners(commands.Cog):
 
     async def add_likes(self, member_id, guild_id, like: int = 1):
         await self.bot.database.insert(
-            member_id,
             guild_id,
+            member_id,
             like,
             table="peep.user_details",
             columns="guild_id,user_id,likes",
@@ -163,7 +171,7 @@ class Listeners(commands.Cog):
             user.guild.id,
             0,
             table="peep.user_details",
-            columns="guild_id,user_id,likes",
+            columns="user_id,guild_id,likes",
             values="$1,$2,$3",
             on_conflicts="""
             (user_id,guild_id) DO UPDATE SET likes =
@@ -244,7 +252,7 @@ class Listeners(commands.Cog):
         if thread_msg is None:
             thread_msg = (
                 f"{role_to_mention}"
-                f" make sure that the meme is original")
+                f" Make sure that the meme is original")
         # create thread on message and send A message to thread
         thread = await channel.create_thread(
             name=thread_name, message=message, auto_archive_duration=1440)
@@ -253,23 +261,20 @@ class Listeners(commands.Cog):
         view.message = thread_message
         return
 
-    @commands.Cog.listener(name="on_raw_reaction_add")
-    @commands.Cog.listener(name="on_raw_reaction_remove")
+    @commands.Cog.listener(name="on_reaction_add")
     async def watch_for_reactions(
-            self, reaction: discord.RawReactionActionEvent
+            self, reaction: discord.Reaction,
+            user: Union[discord.Member, discord.User]
     ):
-
         """ watch for reactions on the message containing
          attachments in meme channels and store likes"""
-
-        is_event_type_removed = reaction.event_type == "REACTION_REMOVE"
-        channel = self.bot.get_channel(reaction.channel_id)
-        message = await channel.fetch_message(reaction.message_id)
+        channel = reaction.message.channel
+        message = reaction.message
         guild = channel.guild
         reactions = message.reactions
         attachments = get_attachments(message=message)
 
-        if not is_event_type_removed and reaction.member.bot:
+        if user.bot:
             return
         if not attachments or len(attachments) == 0:
             return
@@ -278,12 +283,10 @@ class Listeners(commands.Cog):
         if guild_settings is None:
             return
         channel_settings = await get_channel_settings(self.bot, channel)
-        like_limit = channel_settings["max_like"]
-        next_channel = channel_settings["nextlvl"]
-
         if channel_settings is None:
             return
-
+        like_limit = channel_settings["max_like"]
+        next_channel = channel_settings["nextlvl"]
         like_emoji = channel_settings.get("like_emoji")
         is_right_emoji = self.is_valid_emoji(
             emoji=reaction.emoji, compair_to=like_emoji)
@@ -298,10 +301,9 @@ class Listeners(commands.Cog):
         if not is_channel_a_meme_channel:
             return
         if await self.is_completed_meme(message):
-            print("already completed")
             return
         message_watch_duration = channel_settings["voting_time"]
-        message_cache = self.get_cached_message(
+        message_cache = self.get_cached_memes(
             guild_id=guild.id, message_id=message.id)
         if message_watch_duration is not None:
             watch_message_until = (
@@ -320,8 +322,7 @@ class Listeners(commands.Cog):
                 likes = reaction.count
                 break
 
-        if (likes + 1 if is_event_type_removed else likes - 1) >= like_limit:
-            print("here")
+        if (likes - 1) >= like_limit:
             return
 
         if message_cache is None:
@@ -334,27 +335,49 @@ class Listeners(commands.Cog):
                 maxLikes=like_limit,
                 next_Channel=next_channel
             )
-            message_cache = self.get_cached_message(
+            message_cache = self.get_cached_memes(
                 guild_id=guild.id, message_id=message.id)
 
         message_author = message_cache["author_id"]
-        if (likes >= like_limit and next_channel is not None and
-                not is_event_type_removed):
+
+        if (likes >= like_limit and next_channel is not None):
             await self.move_message_to(
                 channel=self.bot.get_channel(next_channel),
                 message_obj=message_cache
             )
         member = guild.get_member(message_author)
-        if not is_event_type_removed:
-            self.bot.loop.create_task(self.add_likes(
-                member_id=message_author, guild_id=guild.id),
-                name=f"store likes")
-            self.bot.loop.create_task(self.check_for_rewards(
-                limit=likes, member=member), name="role rewards")
-        else:
-            self.bot.loop.create_task(self.remove_likes(user=member))
+        self.bot.loop.create_task(self.add_likes(
+            member_id=message_author, guild_id=guild.id),
+            name=f"store likes")
+        self.bot.loop.create_task(self.check_for_rewards(
+            limit=likes, member=member), name="role rewards")
 
-    @commands.Cog.listener(name="one")
+    @commands.Cog.listener(name="on_reaction_remove")
+    async def watch_for_removed_reactions(
+            self, reaction: discord.Reaction,
+            user: Union[discord.Member, discord.User]
+    ):
+        """ watch for removed reactions from the memes"""
+        channel = reaction.message.channel
+        if user.bot:
+            return
+        if channel.type != discord.ChannelType.text:
+            return
+
+        message = reaction.message
+        guild = user.guild
+        meme_cache = self.get_cached_memes(
+            guild_id=guild.id, message_id=message.id)
+        if meme_cache is None:
+            return
+        message_author = meme_cache["author_id"]
+        if message_author is None:
+            return
+        author_resolved = guild.get_member(message_author)
+        if author_resolved is None:
+            return
+        self.bot.loop.create_task(self.remove_likes(user=author_resolved))
+
     @commands.Cog.listener(name="on_message")
     async def watch_for_memes(self, message: discord.Message):
         """
@@ -414,6 +437,10 @@ class Listeners(commands.Cog):
     @commands.Cog.listener(name="on_item_purchase")
     async def on_item_purchase_event(
             self, guild_id: int, raw_item_metadata: dict):
+
+        """ called when someone buys an item using $buy item.
+        it logs it to a shop log channel.
+        """
 
         guild = self.bot.get_guild(guild_id)
         guild_settings = await get_guild_settings(
@@ -483,6 +510,112 @@ class Listeners(commands.Cog):
             embed.title = f"``item sold! id({item_id})``"
             await message.edit(embed=embed)
         return
+
+    @commands.Cog.listener(name="on_message")
+    async def on_oc_message(self, message: discord.Message):
+        """
+        called when someone send a meme with oc tag.
+        """
+        author = message.author
+        channel = message.channel
+
+        if author.bot:
+            return
+        if channel.type != discord.ChannelType.text:
+            return
+        if message.type != discord.MessageType.default:
+            return
+        attachments = get_attachments(message=message)
+        if attachments is None or len(attachments) == 0:
+            return
+        guild_settings = await get_guild_settings(
+            bot=self.bot, guild_id=message.guild.id)
+        channel_settings = await get_channel_settings(
+            bot=self.bot, channel=message.channel)
+        if (guild_settings is None or
+                not guild_settings["oc_lstnr"]):
+            return
+        if channel_settings is None:
+            return
+        if not channel_settings["is_occhannel"]:
+            return
+        if not message.content:
+            return
+        is_oc_message = self.is_oc_message(message)
+        if not is_oc_message:
+            return
+        try:
+            pinned_messages = await channel.pins()
+        except discord.Forbidden:
+            return
+        if len(pinned_messages) >= 50:
+            await pinned_messages[-1].unpin()
+        await message.pin(reason="original meme")
+
+    @commands.Cog.listener(name="on_message_edit")
+    async def on_message_edit_event(
+            self, before: discord.Message, after: discord.Message):
+
+        if before.author.bot:
+            return
+        if before.channel.type != discord.ChannelType.text:
+            return
+
+        channel_settings = await get_channel_settings(
+            bot=self.bot, channel=before.channel)
+        guild_settings = await get_guild_settings(
+            bot=self.bot, guild_id=before.guild.id)
+        before_message_attachments = get_attachments(before)
+        after_message_attachments = get_attachments(after)
+        # unpin edited oc message
+
+        if (channel_settings is not None and
+                channel_settings["is_occhannel"]):
+            if (not before_message_attachments or
+                    len(before_message_attachments) is None):
+                return
+            if not self.is_oc_message(before):
+                return
+            is_message_pinned = before.pinned
+            if not self.is_oc_message(after) and is_message_pinned:
+                await after.unpin(
+                    reason="tried to trick the bot")
+
+    @commands.Cog.listener(name="on_new_video_upload")
+    async def watch_for_uploads(self, guild_id: int, channel, video):
+
+        guild_settings = await get_guild_settings(
+            bot=self.bot, guild_id=guild_id)
+        if guild_settings is None:
+            return
+        if guild_settings["upload_channel"] is None:
+            return
+        logging_textchannel = self.bot.get_channel(
+            guild_settings["upload_channel"])
+        if logging_textchannel is None:
+            return
+        channel_details = channel["snippet"]
+        channel_thumbnail = channel_details["thumbnails"]["default"]["url"]
+        video_id = video["contentDetails"]["videoId"]
+        video_url = f"https://youtu.be/{video_id}"
+
+        upload_ping_role_id = guild_settings["upload_ping"]
+        upload_role = None
+        if upload_ping_role_id is not None:
+            upload_role = logging_textchannel.guild.get_role(
+                upload_ping_role_id
+            )
+        embed = (discord.Embed(
+                    title="Checkout the new video!!",
+                    url=video_url
+                )
+                 .set_thumbnail(url=channel_thumbnail))
+        await logging_textchannel.send(
+            embed=embed,
+            content=upload_role.mention if upload_role else None,
+            allowed_mentions=discord.AllowedMentions(roles=True)
+        )
+        await logging_textchannel.send(content=video_url)
 
 
 async def setup(bot: PepeBot) -> None:

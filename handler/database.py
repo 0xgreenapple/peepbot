@@ -1,26 +1,25 @@
+"""
+:Author: 0xgreenapple(xgreenapple)
+:Copyright: (c) 0xgreenapple
+:License: MIT
+"""
+
 from __future__ import annotations
 
-from handler.utils import to_string_list
-
-"""
-database class for peepbot
-~~~~~~~~~~~~~~~~~~~
-:copyright: (c) xgreenapple
-:license: MIT see LICENSE for more details
-"""
 
 import json
 import asyncio
 import asyncpg
 import logging
-import collections
-from collections import defaultdict
 
 import discord
 from typing import TYPE_CHECKING, List, Optional
 
+
+
 if TYPE_CHECKING:
     from pepebot import PepeBot
+    from handler.utils import to_string_list
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +65,10 @@ class BaseDatabase:
     # create pool and connect to database
     async def __connect(self):
         log.info(
-            f"connecting to database with \n user : {self.user} \n db : {self.dbname} \n host: {self.host}")
+            f"connecting to database with \n"
+            f"user : {self.user} \n "
+            f"db : {self.dbname} \n "
+            f"host: {self.host}")
         # check if connection is already made
         if self.database_pool:
             return

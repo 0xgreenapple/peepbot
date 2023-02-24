@@ -22,6 +22,7 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+
       - name: Deploy to EC2
         uses: appleboy/scp-action@master
         with:
@@ -30,6 +31,11 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           source: ./*
           target: /home/ec2-user/testbot
+
+      - name: Start a screen in the host Machine
+        run: |
+          screen -S peepbot
+
       - name: Install virtualenv and activate
         run: |
           python3.10 -m pip install virtualenv
@@ -44,17 +50,26 @@ jobs:
           DB_USER: ${{ secrets.DBUSER }}
           IMAGEPASS: ${{ secrets.IMAGEPASS }}
           IMAGEUSER: ${{ secrets.IMAGEUSER }}
+          REDISPASS: ${{ secrets.REDISPASS }}
+          YOUTUBE_API_KEY: ${{secrets.YOUTUBE_API_KEY}}
+
         run: |
           export BETATOKEN=$BOT_TOKEN
           export DBPASSWORD=$DB_PASSWORD
           export APPLICATION_ID=$APPLICATION_ID
-          export DNNAME=$DB_NAME
+          export DBNAME=$DB_NAME
           export DBUSER=$DB_USER
           export IMAGEPASS=$IMAGEPASS
           export IMAGEUSER=$IMAGEUSER
-      - name: Install requirements
+          export REDISPASS=$REDISPASS
+          export YOUTUBE_API_KEY=$YOUTUBE_API_KEY
+
+      - name: Install requirements if needed and run it
         run: |
           pip install -r requirements.txt
       - name: Start The bot
         run: |
           python3.10 runner.py
+      - name: Close The bot
+        run: |
+          screen -X -S "peepbot" quit

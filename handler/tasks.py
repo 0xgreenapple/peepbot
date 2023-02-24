@@ -14,9 +14,9 @@ from datetime import timedelta, datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pepebot import pepebot
+    from pepebot import PepeBot
 
-_log = logging.getLogger(__name__)
+_log = logging.getLogger("peepbot")
 
 
 class Events:
@@ -31,11 +31,11 @@ class Events:
     """
 
     def __init__(self, bot):
-        self.bot: pepebot = bot
+        self.bot: PepeBot = bot
         self.current_data = None
         self._tasks: asyncio.Task = self.LoadTasks()
         self._next_data: asyncio.Event = asyncio.Event()
-        self.database = self.bot.Database
+        self.database = self.bot.database
 
     async def InitializeTasks(self):
         """ initialize the tasks
@@ -52,8 +52,9 @@ class Events:
         self._next_data.set()
 
     async def CleanUp(self):
-        if self._tasks.cancelled():
+        if not self._tasks.cancelled():
             self._tasks.cancel()
+        self._next_data.clear()
 
 
 class CheckEconomyItems(Events):
@@ -104,13 +105,13 @@ class CheckEconomyItems(Events):
 
     async def GetData(self):
         """ Return the data"""
-        data = await self.database.Select(
+        data = await self.database.select(
             timedelta(days=40),
-            table="peep.inv",
+            table_name="peep.inventory",
             columns="*",
-            condition="expired < (CURRENT_DATE + $1::interval)",
-            row=True,
-            Filter="ORDER BY expired LIMIT 1"
+            conditions="expired < (CURRENT_DATE + $1::interval)",
+            return_row=True,
+            filter_by="ORDER BY expired LIMIT 1"
         )
         self.current_data = data
         return data
@@ -135,13 +136,13 @@ class CheckEconomyItems(Events):
 
     async def _DeleteColumn(self, data):
         try:
-            await self.database.Delete(
+            await self.database.delete(
                 data['items'],
-                table='peep.inv',
+                table='peep.inventory',
                 condition='items = $1'
             )
         except Exception as e:
-            _log.info(e)
+            _log.error(e)
 
     async def ReloadTask(self):
         """ reinitialize the tasks"""

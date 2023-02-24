@@ -9,8 +9,8 @@ __author__ = '0xgreenapple'
 __copyright__ = 'MIT Copyright 0xgreenapple'
 __version__ = '2.0.0'
 
+import json
 import logging
-import os
 import time
 import asyncio
 import datetime
@@ -20,19 +20,22 @@ import aiohttp
 import discord
 from discord.ext import commands, tasks
 
+import os
 from collections import Counter
 from itertools import cycle
 from platform import python_version
-from typing import Optional
+from typing import Optional, Union
 
-from handler import Context
+from handler import context
+from handler.blocking_code import Executor
 from handler.economy import Economy
 from handler.utils import Emojis, Colour
 from handler.logger import Logger
 from handler.tasks import CheckEconomyItems
-from handler.cache import guild_cache
-from handler.database import Database
+from handler.cache import GuildCache
+from handler.database import Database, get_guild_settings
 from handler.view import ItemLogMessage
+from handler.youtube import Youtube
 
 _log = logging.getLogger("pepebot")
 
@@ -42,14 +45,22 @@ class PepeBot(commands.Bot):
     user: discord.ClientUser
     bot_app_info: discord.AppInfo
     owner: 888058231094665266
+    session: aiohttp.ClientSession
 
-    # constructor
     def __init__(self):
-        self.aiohttp_session = None
+        self.COGS = [
+            'duel',
+            'help',
+            'economy',
+            'error_handler',
+            'listeners',
+            "memes",
+            'setup'
+        ]
         self.ready = False
         self.statues = cycle(
             ["peep"])
-        self.start_time: time = None
+        self.online_time = datetime.datetime.utcnow()
         super().__init__(
             command_prefix=self.get_command_prefix,
             case_insensitive=True,
@@ -64,34 +75,39 @@ class PepeBot(commands.Bot):
             ),
             application_id=APP_ID,
             help_command=None,
+            max_messages=10000
         )
+        self.reconnected_at: time = None
         # variables
         self.version = "2.0.0"
-        self.message_prefix_s = "peep bot"
         self.emoji: Optional[Emojis] = None
         self.colors = Colour()
         self.spam_count = Counter()
-        self.cache: guild_cache = guild_cache()
+        self.cache: GuildCache = GuildCache()
         self._app_info: Optional[discord.AppInfo] = None
         self.taskrunner: Optional[CheckEconomyItems] = None
+        self.executor: Optional[Executor] = None
         self.owner_id = 888058231094665266
         self.logger: typing.Optional[Logger] = None
-        self.online_time = datetime.datetime.now(datetime.timezone.utc)
         self.aiohttp_session: Optional[aiohttp.ClientSession] = None
         self.spam_cooldown = commands.CooldownMapping.from_cooldown(
             5.0, 6.0, commands.BucketType.user)
+        self.youtube = Youtube(bot=self, public_access=True)
         self.user_agent = (
             "peep (Discord Bot: {self.version})/ discord.gg/memesaurus"
             f"Python/{python_version()} "
             f"aiohttp/{aiohttp.__version__}"
             f"discord.py/{discord.__version__}"
         )
+
         # database variables
         self.db = self.pool = self.database_connection_pool = None
         self.database: Optional[Database] = None
         self.connected_to_database = asyncio.Event()
         self.connected_to_database.set()
         self.economy = Economy(bot=self)
+
+
 
     def __getattr__(self, item):
         """ called when an attribute called is not exists in class,
@@ -110,54 +126,39 @@ class PepeBot(commands.Bot):
     async def setup_hook(self) -> None:
         _log.info("setting up hook")
         # initialise new client session
-        self.aiohttp_session = aiohttp.ClientSession(loop=self.loop)
-        # initialize the bot app info
+        self.session = self.aiohttp_session = aiohttp.ClientSession(
+            loop=self.loop)
+        # initialise bot application info
         self.bot_app_info = await self.application_info()
         self.owner_id = self.bot_app_info.owner.id
-        self.console_log("setting up database >")
+        self.executor = Executor(self.loop)
         # initialise database
         await self.initialise_database()
-        # bot startup task
+        self.loop.create_task(
+            self.initialise_youtube_api(), name="Initialise youtube api")
         self.loop.create_task(
             self.startup_tasks(), name="Bot startup tasks")
-        # the list of cogs that will being initialize
-        COGS = ['duel',
-                'setup',
-                'help',
-                'creation',
-                'economy',
-                'server',
-                'error handler',
-                'listeners',
-                "owner"
-                ]
-
         self.console_log("loading cogs..")
-        for cog in COGS:
+        for cog in self.COGS:
             await self.load_extension(f"cogs.{cog}")
             self.console_log(f"{cog} loaded ")
         # add views
         self.add_view(ItemLogMessage(bot=self))
-        self.console_log("setup hook complete")
-        await self.tree.sync()
+        self.console_log("bot initialised")
 
     async def on_ready(self):
-        """ Do startup task when bot successfully connects to database """
-        self.console_log(self.command_prefix)
-        await self.wait_until_ready()
-        # starts bot status loop
-        await self.change_status.start()
-        self.console_log(
+        self.change_status.start()
+        _log.info(
             f"is shard rate limited? :{self.is_ws_ratelimited()}")
-        # add uptime to the bot
-        self.start_time = time.time()
-
-        # set self.ready to true and sent the console message 
+        # set self.ready to true and sent the console message
         if not self.ready:
             self.ready = True
-            self.console_log(
-                f"bot is logged as {self.user}, with latency: {self.latency}")
+            _log.info(
+                f"bot logged as {self.user} "
+                f"took {(datetime.datetime.utcnow() - self.online_time).seconds}"
+                f" seconds")
         else:
+            self.reconnected_at = time.time()
             _log.info(f'{self.user} bot reconnected.')
 
     async def startup_tasks(self):
@@ -169,6 +170,7 @@ class PepeBot(commands.Bot):
 
     async def initialise_database(self):
         """ make a database connection and run startup query"""
+
         self.database = Database(
             bot=self,
             user=USER,
@@ -183,9 +185,15 @@ class PepeBot(commands.Bot):
         self.economy.database = self.database
         _log.info("database initialised")
 
-    # Setup every tables :)
+    async def initialise_youtube_api(self):
+        self.youtube.executor = self.executor
+        apikey = os.environ.get("YOUTUBE_API_KEY")
+        self.youtube.auth.dev_key = apikey
+        await self.youtube.initialise()
+        self.youtube.watch_for_uploads.start()
 
     async def database_startup_tasks(self):
+        await self.database.create_schema(schema_name="peep")
         await self.database.create_table(
             table_name="peep.Guilds",
             columns="""
@@ -223,14 +231,13 @@ class PepeBot(commands.Bot):
             peep.Channels(channel_id,guild_id)
             """
         )
-
         # store the settings stats
         await self.database.create_table(
             table_name="peep.guild_settings",
             columns=
             """
             guild_id           BIGINT UNIQUE,
-            prefix             varchar(20),
+            prefix             varchar(20) DEFAULT '$',
             vote               BIGINT,
             reaction_lstnr     BOOLEAN DEFAULT FALSE,
             thread_lstnr       BOOLEAN DEFAULT FALSE,
@@ -241,6 +248,8 @@ class PepeBot(commands.Bot):
             customization_time BIGINT DEFAULT 5,
             economy            BOOLEAN DEFAULT FALSE,
             dm_on_accept       BOOLEAN DEFAULT FALSE,
+            upload_channel     BIGINT,
+            upload_ping        BIGINT,
             FOREIGN KEY (guild_id) REFERENCES
             peep.Guilds(guild_id)
             """
@@ -369,8 +378,24 @@ class PepeBot(commands.Bot):
             peep.Channels(guild_id,channel_id) ON DELETE CASCADE
             """
         )
-        with open(file="botconfig/database/triggers.sql", mode="r") as triggers:
-            await self.database.db.execute(triggers.read())
+        await self.database.create_table(
+            table_name="peep.youtube_uploads",
+            columns=
+            """
+            guild_id              BIGINT UNIQUE,
+            channel_id            varchar(256),
+            channel_name          TEXT,
+            recent_upload_id      varchar(500)
+            """
+        )
+        await self.database.create_table(
+            table_name="peep.bot_config",
+            columns=
+            """
+            log_channel      BIGINT,
+            status_channel   BIGINT
+            """
+        )
 
     def console_log(self, message):
         """ prints to console """
@@ -381,10 +406,10 @@ class PepeBot(commands.Bot):
 
     @staticmethod
     async def get_command_prefix(bot, message: discord.Message):
-        """ Returns bot command prefix """
-        prefixes = "%"
-        print(message)
-        return prefixes if prefixes else "%"
+        guild = message.guild
+        guild_settings = await get_guild_settings(bot=bot, guild_id=guild.id)
+        prefix = guild_settings['prefix'] if guild_settings else None
+        return prefix if prefix else "$"
 
     @property
     async def app_info(self):
@@ -419,50 +444,46 @@ class PepeBot(commands.Bot):
             self.console_log(f"closing bot session")
             await self.aiohttp_session.close()
             await self.database.close()
+            await self.taskrunner.CleanUp()
+            await self.executor.shutdown()
         except Exception as e:
-            print(e)
+            _log.info(e)
         try:
-            self.console_log(f"closing the bot")
             await super().close()
         except Exception as e:
             print(e)
 
-    """ Events """
+    async def on_guild_join(self, guild: discord.Guild):
+        _log.info("joined guild : " + guild.name)
 
-    # do something on guild Join
-    async def on_guild_join(self, guild):
-        _log.info("joined guild : ", guild)
-
-    async def on_guild_remove(self, guild):
-        _log.info("left a guild : ", guild)
+    async def on_guild_remove(self, guild: discord.Guild):
+        _log.info("left a guild : " + guild.name)
 
     async def on_resumed(self):
-        """print when client resumed"""
-        _log.info(f"{self.user} [resumed] with latency:{self.latency}")
+        _log.info(f"{self.user} [resumed]")
 
     async def on_connect(self):
-        """print when client connected to discord"""
         _log.info(
-            f"{self.user} is connected successfully! latency: {self.latency}")
+            f"{self.user} is connected successfully!")
 
     async def on_disconnect(self):
-        """print when client disconnected to discord"""
-        self.console_log(
-            f"{self.user} is disconnected! latency: {self.latency}")
+        _log.warning(
+            f"{self.user} is disconnected!")
 
     async def get_context(
-            self, message, /, *, cls=Context.Context) -> Context.Context:
-        """ overwrite the new bot context"""
+            self, message, /, *, cls=context.Context) -> context.Context:
         ctx = await super().get_context(message, cls=cls)
         return ctx
 
     async def on_message(self, message: discord.Message):
-        """ called when the message is received process the commands"""
+        if message.author.bot:
+            return
+
         await self.process_commands(message)
 
 
 # get environment variables
-TOKEN = os.environ.get('BETATOKEN')
+TOKEN = os.environ.get('BOT_TOKEN')
 APP_ID = os.environ.get('APPLICATION_ID')
 DB_PASSWORD = os.environ.get('DBPASSWORD')
 HOST = os.environ.get('DBHOST')

@@ -4,14 +4,13 @@
 :Copyright: 2022-present @0xgreenapple
 """
 import logging
-import re
-import unicodedata
-
 import discord
 from discord import app_commands, Interaction
 from discord.app_commands import Range
 from discord.ext import commands
 
+from handler.context import Context
+from handler.view import DropdownView
 from pepebot import PepeBot
 
 from datetime import timedelta
@@ -189,7 +188,7 @@ class Configuration(commands.Cog):
         if not all(bot_required_permissions):
             embed.title = f"**invalid permissions**"
             embed.description = (
-                f">>> {self.bot.right} bot missing following "
+                f">>> {self.bot.emoji.right} bot missing following "
                 f"permissions in {channel.mention} channel"
                 f":{channel.mention} \n"
                 f" \n".join(permission_string)
@@ -245,7 +244,7 @@ class Configuration(commands.Cog):
         # send a error message if given channel is not a meme channel
         if channel_settings is None or not channel_settings["is_memechannel"]:
             embed.description = (
-                f">>> {self.bot.right} {meme_channel.mention} channel"
+                f">>> {self.bot.emoji.right} {meme_channel.mention} channel"
                 f" is not a meme channel, pls run command ``/config "
                 f"{meme_channel.name}`` to check if the channel is a "
                 f"meme channel or ``/serverconfig`` to see list of "
@@ -259,7 +258,7 @@ class Configuration(commands.Cog):
                 delta_time = string_to_delta(duration)
             except Exception as error:
                 embed.description = (
-                    f">>> {self.bot.right} the time ``{duration}`` is "
+                    f">>> {self.bot.emoji.right} the time ``{duration}`` is "
                     f"invalid it must be in formate of"
                     f"```1(h|hr|hour|hours) \n 1(m|min|minute) \n"
                     f" 1(s|second|secs)``` "
@@ -271,7 +270,7 @@ class Configuration(commands.Cog):
         if max_likes is not None:
             if max_likes <= 1:
                 embed.description = (
-                    f">>> {self.bot.right} max likes must be greater than 1")
+                    f">>> {self.bot.emoji.right} max likes must be greater than 1")
                 await response.send_message(embed=embed, ephemeral=True)
                 return
             elif max_likes > 1:
@@ -299,7 +298,7 @@ class Configuration(commands.Cog):
         if is_delta_time:
             human_relative_time = get_relative_time(delta_time)
         embed.description = f"""
-        >>> {self.bot.right} **channel**:{meme_channel.mention}
+        >>> {self.bot.emoji.right} **channel**:{meme_channel.mention}
         **maximum likes**: {max_likes}
         **gallery**: {is_next_gallery_channel}
         **time limit**: {human_relative_time}
@@ -311,10 +310,10 @@ class Configuration(commands.Cog):
     @setup.command(name="meme_admin_role")
     async def add_meme_admin_role(
             self, interaction: Interaction, role: discord.Role,
-            remove: Literal['true']
+            remove: Literal['true'] = None
     ):
         """
-        add A role to manage economy related commands.
+        add a role to manage economy related commands.
 
         Parameters
         ----------
@@ -323,7 +322,8 @@ class Configuration(commands.Cog):
         """
         response = interaction.response
         embed = discord.Embed()
-        if interaction.guild.owner_id != interaction.user.id:
+        is_owner = await self.bot.is_owner(interaction.user)
+        if not is_owner and interaction.guild.owner_id != interaction.user.id:
             embed.title = "``command failed!``"
             embed.description = "only owner can execute this command"
             await interaction.response.send_message(
@@ -334,12 +334,12 @@ class Configuration(commands.Cog):
             guild_id=interaction.guild.id, MemeAdmin=role_id)
         embed.title = f"``role {'added' if role_id else 'removed'}``"
         embed.description = (
-            f">>> {self.bot.right} now members with "
+            f">>> {self.bot.emoji.right} now members with "
             f"{role.mention} will be able to execute "
             f"all meme and economy commands")
         if role_id is None:
             embed.description = (
-                f">>> {self.bot.right} meme admin role has been removed, "
+                f">>> {self.bot.emoji.right} meme admin role has been removed, "
                 f"economy and meme commands are now owner only")
         await response.send_message(embed=embed, ephemeral=True)
 
@@ -371,7 +371,7 @@ class Configuration(commands.Cog):
         if (channel_settings is None or
                 not channel_settings["is_memechannel"]):
             embed.description = (
-                f">>> {self.bot.right} channel {meme_channel.mention} is "
+                f">>> {self.bot.emoji.right} channel {meme_channel.mention} is "
                 f"not a meme channel please run commands ``/channelconfig`` to "
                 f"see list of meme channels")
             await response.send_message(embed=embed, ephemeral=True)
@@ -391,6 +391,15 @@ class Configuration(commands.Cog):
                     f">>> {self.bot.emoji.right}"
                     f"given emoji is not a valid emoji :``{custom_emoji}``")
                 await response.send_message(embed=embed, ephemeral=True)
+                return
+            elif custom_emoji == channel_settings["dislike_emoji"]:
+                embed.description = (
+                    f">>> {self.bot.right} "
+                    f"like emoji should not be same as dislike emoji"
+                )
+                await response.send_message(
+                    embed=embed, ephemeral=True
+                )
                 return
         elif setdefault is not None:
             emoji = self.bot.emoji.like
@@ -435,9 +444,8 @@ class Configuration(commands.Cog):
         if (channel_settings is None or
                 not channel_settings["is_memechannel"]):
             embed.description = (
-                f">>> {self.bot.right} channel {meme_channel.mention} is "
-                f"not a meme channel please run commands ``/channelconfig`` to "
-                f"see list of meme channels")
+                f">>> {self.bot.emoji.right} channel {meme_channel.mention} is "
+                f"not a meme channel")
             await response.send_message(embed=embed, ephemeral=True)
             return
 
@@ -453,8 +461,17 @@ class Configuration(commands.Cog):
             if emoji is None:
                 embed.description = (
                     f">>> {self.bot.emoji.right}"
-                    f"given emoji is not a valid emoji :``{custom_emoji}``")
+                    f" given emoji is not a valid emoji :``{custom_emoji}``")
                 await response.send_message(embed=embed, ephemeral=True)
+                return
+            elif custom_emoji == channel_settings["like_emoji"]:
+                embed.description = (
+                    f">>> {self.bot.right} "
+                    f"dislike emoji should not be same as like emoji"
+                )
+                await response.send_message(
+                    embed= embed, ephemeral= True
+                )
                 return
         elif setdefault is not None:
             emoji = self.bot.emoji.like
@@ -565,11 +582,11 @@ class Configuration(commands.Cog):
         )
         embed.title = "``logging configuration``"
         embed.description = (
-            f">>> {self.bot.right}"
+            f">>> {self.bot.emoji.right}"
             f"bot will now send item logs to channel {shop_log.mention} "
         )
         if remove == 'true':
-            embed.description = f">>> {self.bot.right}" \
+            embed.description = f">>> {self.bot.emoji.right}" \
                                 f"logging channel has been removed"
         await interaction.response.send_message(
             embed=embed)
@@ -609,26 +626,81 @@ class Configuration(commands.Cog):
             embed=embed
         )
 
-    @setup.command(name="youtube_notification")
+    @setup.command(name="prefix")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setup_prefix(
+        self, interaction:discord.Interaction, prefix: app_commands.Range[str,0,10],
+        set_default: Literal['true'] = None
+    ):
+        await self.set_guild_settings(
+            guild_id=interaction.guild_id,
+            prefix=prefix if not set_default else '$')
+        if set_default == 'true':
+            prefix = '$'
+        embed = discord.Embed()
+        embed.description = (
+            f""">>> {self.bot.right} bot prefix has changed to {prefix}"""
+        )
+        await interaction.response.send_message(
+            embed=embed
+        )
+
+    youtube = app_commands.Group(
+        name='youtube',
+        description='configuration commands related to youtube',
+        guild_only=True,
+        default_permissions=discord.Permissions(administrator=True)
+    )
+
+    @youtube.command(name="subscribe")
     @app_commands.checks.has_permissions(administrator=True)
     async def setup_youtube(
-            self, interaction: discord.Interaction, youtube_channel: str,
-            send_to: discord.TextChannel, upload_ping_role: discord.Role = None,
-            remove: Literal['true'] = None
+        self, interaction: discord.Interaction, youtube_channel: str,
+        send_to: discord.TextChannel = None
     ):
+
+        """
+        set up a notification channel for youtube video.
+
+        Parameters
+        ----------
+        youtube_channel:
+            the YouTube channel that you want to get notification for, can be a
+            link or username
+        send_to:
+            provide the channel where you want the notification to send to
+        """
+
         channel_id = self.bot.youtube.get_id_from_url(
             url=youtube_channel)
         channel_username = self.bot.youtube.get_username_from_url(
             url=youtube_channel)
         embed = discord.Embed(title="``command failed``")
+        await interaction.response.defer(thinking=True, ephemeral=True)
+
+        subscribed_channels = await self.bot.youtube.get_subscribed_for_guilds(
+            guild_id=interaction.guild_id
+        )
+
+        if subscribed_channels is not None:
+            embed.description = (
+                "subscribing to multiple channel is currently not available. "
+                "to subscribe to new channel you must remove older one. "
+                "for that please run command "
+                "``/setup youtube_notification remove:true`` "
+            )
+            await interaction.followup.send(embed=embed)
+            return
+
         if not channel_id and not channel_username:
+            channel_username = youtube_channel
             channel_id = await self.bot.youtube.get_channel_id(
-                youtube_channel)
+                channel_username)
             if channel_id is None:
                 embed.description = (
-                    f">>> {self.bot.right} channel url ``{youtube_channel} is invalid"
-                    "pls provide any of following types: \n"
-                    "``yourusername``"
+                    f">>> {self.bot.emoji.right} channel url/username ``{youtube_channel}`` is invalid "
+                    "please provide any of following types: \n"
+                    "``yourusername`` \n"
                     "``https://youtube.com/c/yourcustomusername`` \n"
                     "``https://youtube.com/@yourusername`` \n"
                     "``https://youtube.com/user/yourusername`` \n"
@@ -636,73 +708,184 @@ class Configuration(commands.Cog):
                     " for more info please visit [this link]"
                     "(https://support.google.com/youtube/answer/6180214?hl=en)"
                 )
-                await interaction.response.send_message(embed=embed)
+                await interaction.followup.send(
+                    embed=embed)
                 return
-
-        if channel_id is None and channel_username:
-            print(channel_id)
-            print(channel_username)
+        elif channel_id is None and channel_username:
             channel_id = await self.bot.youtube.get_channel_id(
                 channel_username)
             if channel_id is None:
-                embed.description = "the url or username you given is invalid"
-                await interaction.response.send_message(
-                    embed=embed
-                )
+                embed.description = "the url or username you provided is " \
+                                    "invalid "
+                await interaction.followup.send(
+                    embed=embed)
                 return
-        channel_permissions = send_to.permissions_for(interaction.guild.me)
-        required_permissions = [
-            channel_permissions.send_messages,
-            channel_permissions.embed_links,
-            channel_permissions.view_channel]
-        if not all(required_permissions):
-            embed.description = (
-                f"bot missing permission in channel: ``{send_to.mention}`` : \n"
-                f"make sure bot has following permissions in the channel: "
-                f"``send message,send embed links, view channel``")
-            await interaction.response.send_message(
-                embed=embed,ephemeral=True
-            )
-            return
 
-        to_remove = True if remove == 'true' else False
-        is_already_subscribed = await self.bot.youtube.get_subscribed_channel(
-            chanel_id=channel_id,guild_id = interaction.guild_id
-        )
-        if is_already_subscribed is None and to_remove:
-            embed.description = f">>> you are already not subscribed " \
-                                f"to channel ``{channel_username}``"
-            await interaction.response.send_message(
-                embed=embed,ephemeral=True
+        if send_to is not None:
+            # check permissions for the log channel
+            channel_permissions = send_to.permissions_for(interaction.guild.me)
+            required_permissions = [
+                channel_permissions.send_messages,
+                channel_permissions.embed_links,
+                channel_permissions.view_channel]
+            if not all(required_permissions):
+                embed.description = (
+                    f"bot missing permission in channel: ``{send_to.mention}`` : \n"
+                    f"make sure bot has following permissions in the channel: "
+                    f"``send message,send embed links, view channel``")
+                await interaction.followup.send(embed=embed)
+                return
+            await self.set_guild_settings(
+                guild_id=interaction.guild_id, upload_channel=send_to.id
             )
-            return
-        elif to_remove:
-            await self.bot.youtube.unsubscribe_to_channel(
-                channel_id=channel_id, guild_id=interaction.guild_id
-            )
-            embed.title = "``unsubscribed!``"
-            embed.description = ">>> successfully unsubscribed to channel"
-            await interaction.response.send_message(
-                embed=embed, ephemeral=True
-            )
-            return
         await self.bot.youtube.subscribe_to_channel(
-            channel_id=channel_id, guild_id=interaction.guild_id,
+            channel_id=channel_id,
+            guild_id=interaction.guild_id,
             upload_id=None
         )
-        await self.set_guild_settings(
-            guild_id=interaction.guild_id,
-            upload_channel = send_to.id
+        embed.title = "``subscribed``"
+        embed.description = (
+            f">>> {self.bot.emoji.right} "
+            f"subscribed to channel ``{channel_username}``\n")
+        await interaction.followup.send(embed=embed)
+
+    @youtube.command(name="unsubscribe")
+    async def youtube_unsubscribe(
+        self, interaction: discord.Interaction, channel: Literal['all']
+    ):
+        """
+        unsubscribe to channel.
+        """
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        embed = discord.Embed(title="command failed")
+        subscribed_channels = await self.bot.youtube.get_subscribed_for_guilds(
+            guild_id=interaction.guild_id
         )
-        if upload_ping_role is not None:
+        if subscribed_channels is None:
+            embed.description = "you are already not subscribed to any channel"
+            await interaction.followup.send(
+                embed=embed, ephemeral=True)
+            return
+        await self.bot.youtube.unsubscribe_to_channel(
+            guild_id=interaction.guild_id
+        )
+        embed.title = None
+        embed.description = (
+            f""">>> {self.bot.emoji.right} unsubscribed to {channel} channels""")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @youtube.command(name="notification_channel")
+    async def youtube_notification_channel(
+        self, interaction: discord.Interaction, channel: discord.TextChannel
+    ):
+        """
+        setup a youtube notification channel.
+
+        Parameters
+        ----------
+        channel:
+            the channel you want to set to notification channel.
+        """
+        channel_permissions = channel.permissions_for(interaction.guild.me)
+        required_permissions = [
+            channel_permissions.view_channel,
+            channel_permissions.send_messages,
+            channel_permissions.embed_links,
+        ]
+        embed = discord.Embed(title="``command failed``")
+        if not all(required_permissions):
+            embed.description = (
+                f">>> {self.bot.emoji.right}"
+                f"bot missing any of following permissions in the channel"
+                f"{channel.mention} : \n"
+                f"``view channel, send message, embed links`` "
+            )
+            await interaction.response.send_message(
+                embed=embed,ephemeral=True
+            )
+            return
+        await self.set_guild_settings(
+            guild_id=interaction.guild_id, upload_channel=channel.id)
+
+        embed.title = None
+        embed.description = (
+            f">>> "
+            f"{self.bot.emoji.right} all youtube channel "
+            f"notifications will send to "
+            f"{channel.mention} channel")
+        await interaction.response.send_message(
+            embed=embed, ephemeral=True
+        )
+
+    @youtube.command(name="upload_ping")
+    async def youtube_upload_ping(
+        self, interaction: discord.Interaction, role: discord.Role,
+            remove: Literal['true'] = None):
+        """
+        setup a ping role for notifications.
+
+        Parameters
+        ----------
+        role:
+            the role that you want to set to upload ping role.
+        remove:
+            remove already set ping roles.
+        """
+        embed = discord.Embed()
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        if remove == 'true':
             await self.set_guild_settings(
                 guild_id=interaction.guild_id,
-                upload_ping=upload_ping_role.id
+                upload_ping=None
             )
-
-        embed.title = "``subscribed``"
-        embed.description = (f"subscribed to channel ``{channel_username}``")
-        await interaction.response.send_message(
-            embed=embed
+            embed.title = None
+            embed.description = f">>> {self.bot.emoji.right} removed ping role"
+            await interaction.followup.send(embed=embed)
+            return
+        await self.set_guild_settings(
+            guild_id=interaction.guild_id,
+            upload_ping=role.id
         )
+        embed.title = None
+        embed.description = f">>> {self.bot.emoji.right} " \
+                            f"role {role.mention} will be pinged " \
+                            f"in youtube notification"
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
+    @youtube.command(name='help')
+    async def youtube_help(self, interaction: discord.Interaction):
+        """
+        get help related to setting up youtube notification
+        """
+        embed = discord.Embed(title=f"{self.bot.emoji.discord_emoji} youtube help")
+        embed.description = (
+            f"{self.bot.right} run following commands to setup "
+            f"youtube notification \n \n"
+            f">>> {self.bot.slash} **youtube subscribe ``channel:``youtube "
+            f"channel:** "
+            f"subscribe to a channel, you can only subscribe one channel per "
+            f"guild \n "
+            f"{self.bot.slash} **youtube notification_channel ``channel``: "
+            f"text channel :** "
+            f" the channel where you want to get the notification to send "
+            f"into \n "
+            f"{self.bot.slash} **youtube upload_ping ``role``: a role:**"
+            f"if you want a role to pinged when received upload notification \n"
+            f"{self.bot.slash} **youtube unsubscribe**: unsubscribe to "
+            f"youtube notifications "
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @setup.command(name="help")
+    async def send_test(self, interaction: Interaction):
+        """
+        get helps related to setup commands
+        """
+        view = DropdownView()
+        embed = discord.Embed(title=f"{self.bot.emoji.discord_emoji} Bot help")
+        embed.description = (
+            "To view the setup instructions for a particular setting,"
+            " simply select the one of the option from the dropdown menu."
+        )
+        await interaction.response.send_message(
+            embed=embed, view=view)

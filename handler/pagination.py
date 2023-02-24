@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, List
 
 if TYPE_CHECKING:
     from pepebot import PepeBot
-    from handler.Context import Context
+    from handler.context import Context
 
 
 # errors

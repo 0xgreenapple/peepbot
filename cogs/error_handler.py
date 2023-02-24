@@ -15,7 +15,7 @@ from discord.ext import commands, menus
 from discord import app_commands
 
 from handler import utils
-from handler.Context import Context
+from handler.context import Context
 from handler.errors import RoleNotFound
 from pepebot import PepeBot
 
@@ -36,13 +36,16 @@ class error_handler(commands.Cog):
             return
         elif isinstance(error, RoleNotFound):
             return
-        elif isinstance(error, (commands.CommandNotFound, commands.DisabledCommand)):
+        elif isinstance(
+                error, (commands.CommandNotFound, commands.DisabledCommand)):
             return
         elif isinstance(error, commands.CheckFailure):
             return
         # handel the command cooldown
         elif isinstance(error, commands.CommandOnCooldown):
-            error_dis = f"{ctx.command.name} command is currently on cooldown try again after {round(error.retry_after)} seconds".title()
+            error_dis = (
+                f"{ctx.command.name} command is currently on cooldown "
+                f"try again after {round(error.retry_after)} seconds".title())
             return await ctx.error_embed(description=error_dis)
 
         elif isinstance(error, commands.MissingRequiredArgument):
@@ -51,13 +54,14 @@ class error_handler(commands.Cog):
             return await ctx.error_embed(error_name=name, error_dis=des)
 
         elif isinstance(error, (commands.BadArgument, commands.BadUnionArgument)):
-            name = f"invalided input_"
+            name = f"invalid input"
             des = f"{error}"
             return await ctx.error_embed(error_name=name, error_dis=des)
 
         elif isinstance(error, commands.UserInputError):
             name = f"wrong input"
-            des = "there is something wrong about your input for more info type on help"
+            des = (
+                "there is something wrong about your input")
             return await ctx.error_embed(error_name=name, error_dis=des)
 
         elif isinstance(error, commands.UserNotFound):
@@ -65,16 +69,14 @@ class error_handler(commands.Cog):
             des = f"the user that you entered not found"
             return await ctx.error_embed(error_name=name, error_dis=des)
 
-        # handel the missing permission
-
         elif isinstance(error, commands.MissingPermissions):
             if ctx.channel.type is discord.ChannelType.private:
                 return
             permissions = ' '.join(error.missing_permissions)
             name = "Missing permissions",
-            value = f'you are missing permissions to run the command \n``{permissions}``'
+            value = f'you are missing permissions to run the command \n' \
+                    f'``{permissions}``'
             return await ctx.error_embed(error_name=name, error_dis=value)
-
         # handel the bot missing permission error
         elif isinstance(error, commands.BotMissingPermissions):
             if ctx.channel.type is discord.ChannelType.private:
@@ -84,55 +86,21 @@ class error_handler(commands.Cog):
             des = f"i am missing some permission to run the command \n ``{missing}``"
             return await ctx.error_embed(error_name=name, error_dis=des)
 
-        # handel the guild only error
-        elif isinstance(error, app_commands.NoPrivateMessage):
-            embed = discord.Embed(
-                title=f"{error_emoji} ``OPERATION FAILED``",
-                colour=self.bot.embed_colour,
-                timestamp=discord.utils.utcnow())
-            embed.add_field(
-                name="__**Guild only command**__",
-                value=">>> this command can be only execute in the servers")
-            embed.set_footer(text='\u200b', icon_url=ctx.author.avatar.url)
-            return await ctx.reply(embed=embed)
-
         elif isinstance(error, commands.CommandInvokeError):
-
-            if isinstance(error.original, discord.HTTPException) and error.original.code == 50001:
-                logging.warning(f"bot missing access in {ctx.guild}")
-
-            if isinstance(error.original, discord.HTTPException) and error.original.code == 50006:
-                name = f"user not found",
-                des = f"give me something to send i cannot send empty message> if you think this is a error report it " \
-                      f"by clicking on support "
+            if (isinstance(error.original, discord.HTTPException) and
+                    error.original.code == 50001):
+                log.warning(f"bot missing access in {ctx.guild}")
+            elif (isinstance(error.original, discord.HTTPException)
+                  and error.original.code == 50006):
+                name = f"invalid input",
+                des = f"give me something to send i cannot send empty message>"
                 return await ctx.error_embed(error_name=name, error_dis=des)
-
-            elif isinstance(error.original, menus.CannotEmbedLinks):
-                return await ctx.reply("i m missing permission cannot send embeds "
-                                       "please give me permission to send embed links")
-
-            elif isinstance(error.original, menus.CannotAddReactions):
-                name = f"cannot add reaction",
-                des = f"i am not able to add reaction to messages. this is kinda sus please give me permission to add " \
-                      f"reaction to messages "
-                return await ctx.error_embed(error_name=name, error_dis=des)
-
-            # handel cannot read message error while adding menus
-            elif isinstance(error.original, menus.CannotReadMessageHistory):
-                embed = discord.Embed(
-                    title=f"{error_emoji} ``OPERATION FAILED``",
-                    colour=self.bot.embed_colour,
-                    timestamp=discord.utils.utcnow())
-                embed.add_field(
-                    name=f"__**cannot read messages**__",
-                    value=f">>> i m missing permission cannot read messages "
-                          "please give me permission read messages")
-                return await ctx.reply(embed=embed)
-
             # Bot missing permissions (Unhandled)
             elif isinstance(error.original, (discord.Forbidden, menus.CannotSendMessages)):
-                log.info(
-                    f"Missing Permissions for {ctx.command.qualified_name} in #{ctx.channel.name} in {ctx.guild.name} code : {error.original.code}")
+                log.warning(
+                    f"Missing Permissions for {ctx.command.qualified_name} in "
+                    f"#{ctx.channel.name} in {ctx.guild.name} code : "
+                    f"{error.original.code}")
                 return
             elif isinstance(error.original, discord.Forbidden):
                 log.info(f'MISSION PERMISSION IN [guild: {ctx.guild.name}] ID:{ctx.guild.name} user:{ctx.author.name }')
@@ -158,7 +126,8 @@ class error_handler(commands.Cog):
 
         elif isinstance(error, app_commands.CommandNotFound):
             return
-
+        elif isinstance(error, app_commands.CheckFailure):
+            return
         # handel the command cooldown
         elif isinstance(error, app_commands.CommandOnCooldown):
             error_name = "command on cooldown"

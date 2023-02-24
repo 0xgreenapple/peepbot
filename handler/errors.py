@@ -1,4 +1,5 @@
 import discord
+from discord.ext.commands.errors import CommandError, CheckFailure
 
 
 class EconomyException(Exception):
@@ -53,15 +54,9 @@ class UserException(Exception):
     pass
 
 
-class RoleNotFound(UserException):
+class RoleNotFound(UserException, CommandError):
     """raise error if role not found in the user"""
-    def __init__(self,message: str = "missing required role"):
+
+    def __init__(self, message: str = "missing required role"):
         self.message: str = message
         super().__init__(self.message)
-
-
-
-
-
-
-

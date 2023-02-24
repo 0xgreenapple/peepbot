@@ -138,3 +138,24 @@ $$ language plpgsql;
 CREATE OR REPLACE TRIGGER insert_user_inv_guild_id
 BEFORE INSERT ON peep.inventory
 FOR EACH ROW EXECUTE FUNCTION peep.check_user_inv_guild_ids();
+
+
+
+CREATE OR REPLACE FUNCTION peep.meme_msg_add_channel_guild_id()
+RETURNS TRIGGER AS $$
+DECLARE
+check_parent_table Integer;
+BEGIN
+	SELECT Count(*) INTO check_parent_table FROM peep.Channels
+	WHERE guild_id = NEW.guild_id AND channel_id = NEW.channel_id;
+	IF check_parent_table = 0 THEN
+	INSERT INTO peep.Channels(guild_id,channel_id)
+	VALUES(NEW.guild_id,NEW.channel_id);
+	END IF;
+	RETURN NEW;
+END;
+$$ language plpgsql;
+
+CREATE OR REPLACE TRIGGER meme_completed_messages_guild_id
+BEFORE INSERT ON peep.meme_completed_messages
+FOR EACH ROW EXECUTE FUNCTION peep.meme_msg_add_channel_guild_id();
