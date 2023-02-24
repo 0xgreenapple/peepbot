@@ -164,6 +164,6 @@ main.sqlite
 *.json
 .fleet
 .vscode
-*.log
+
 
 
