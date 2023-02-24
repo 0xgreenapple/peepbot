@@ -483,7 +483,7 @@ class PepeBot(commands.Bot):
 
 
 # get environment variables
-TOKEN = os.environ.get('BOT_TOKEN')
+TOKEN = os.environ.get('BETATOKEN')
 APP_ID = os.environ.get('APPLICATION_ID')
 DB_PASSWORD = os.environ.get('DBPASSWORD')
 HOST = os.environ.get('DBHOST')

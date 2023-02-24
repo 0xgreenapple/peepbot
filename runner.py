@@ -164,13 +164,7 @@ async def main():
     )
     client.add_command(cog)
 
-    # get environment variables
-    TOKEN = os.environ.get('BETATOKEN')
-    APP_ID = os.environ.get('APPLICATION_ID')
-    DB_PASSWORD = os.environ.get('DBPASSWORD')
-    HOST = os.environ.get('DBHOST')
-    USER = os.environ.get('DBUSER')
-    DBNAME = os.environ.get('DBNAME')
+
 
     async with client, client.logger:
         try:
