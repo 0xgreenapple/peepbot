@@ -34,7 +34,7 @@ jobs:
 
       - name: Start a screen in the host Machine
         run: |
-          screen -S peepbot
+          screen -d -m -S peepbot
 
       - name: Install virtualenv and activate
         run: |
