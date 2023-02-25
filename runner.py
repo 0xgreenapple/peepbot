@@ -163,8 +163,7 @@ async def main():
         loggers=levels
     )
     client.add_command(cog)
-
-
+    client.add_command(sync_commands)
 
     async with client, client.logger:
         try:

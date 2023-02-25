@@ -247,6 +247,8 @@ class Listeners(commands.Cog):
         role_to_mention = meme_manager_role
         if meme_manager_role is None:
             role_to_mention = user.mention
+        else:
+            role_to_mention = role_to_mention.mention
         thread_name = f"{user.name}({secrets.token_hex(5)})"
         thread_msg = settings['thread_msg']
         if thread_msg is None:

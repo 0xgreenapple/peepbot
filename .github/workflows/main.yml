@@ -48,8 +48,10 @@ jobs:
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           envs: BETATOKEN,DBPASSWORD,APPLICATION_ID,DBNAME,DBUSER,IMAGEPASS,IMAGEUSER,REDISPASS,YOUTUBE_API_KEY
-          script_stop: true
           script: |
             cd /home/ec2-user/testbot
-            screen -d -m -S peepbot bash -c "python3.10 -m venv env && source env/bin/activate && pip install -r requirements.txt && python3.10 runner.py"
+            python3.10 -m venv env 
+            source env/bin/activate
+            pip install -r requirements.txt 
+            python3.10 runner.py
       
