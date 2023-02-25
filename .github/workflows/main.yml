@@ -25,17 +25,17 @@ jobs:
 
       - name: Deploy to EC2
         uses: appleboy/scp-action@master
+        env:
+          BETATOKEN: ${{ secrets.BETATOKEN }}
+          DBPASSWORD: ${{ secrets.DBPASSWORD }}
+          APPLICATION_ID: ${{ secrets.APPLICATION_ID }}
+          DBNAME: ${{ secrets.DBNAME }}
+          DBUSER: ${{ secrets.DBUSER }}
+          IMAGEPASS: ${{ secrets.IMAGEPASS }}
+          IMAGEUSER: ${{ secrets.IMAGEUSER }}
+          REDISPASS: ${{ secrets.REDISPASS }}
+          YOUTUBE_API_KEY: ${{secrets.YOUTUBE_API_KEY}}
         with:
-          env:
-            BETATOKEN: ${{ secrets.BETATOKEN }}
-            DBPASSWORD: ${{ secrets.DBPASSWORD }}
-            APPLICATION_ID: ${{ secrets.APPLICATION_ID }}
-            DBNAME: ${{ secrets.DBNAME }}
-            DBUSER: ${{ secrets.DBUSER }}
-            IMAGEPASS: ${{ secrets.IMAGEPASS }}
-            IMAGEUSER: ${{ secrets.IMAGEUSER }}
-            REDISPASS: ${{ secrets.REDISPASS }}
-            YOUTUBE_API_KEY: ${{secrets.YOUTUBE_API_KEY}}
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
