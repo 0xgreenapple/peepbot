@@ -34,13 +34,13 @@ jobs:
 
       - name: Start a screen in the host Machine
         run: |
-          screen -d -m -S peepbot
+          screen -m -S peepbot
 
       - name: Install virtualenv and activate
         run: |
-          python3.10 -m pip install virtualenv
-          virtualenv env
+          python3.10 -m venv env
           source env/bin/activate
+
       - name: Set and export the bot environment variables
         env:
           BOT_TOKEN: ${{ secrets.BETATOKEN }}
