@@ -26,50 +26,28 @@ jobs:
       - name: Deploy to EC2
         uses: appleboy/scp-action@master
         with:
+          env:
+            BETATOKEN: ${{ secrets.BETATOKEN }}
+            DBPASSWORD: ${{ secrets.DBPASSWORD }}
+            APPLICATION_ID: ${{ secrets.APPLICATION_ID }}
+            DBNAME: ${{ secrets.DBNAME }}
+            DBUSER: ${{ secrets.DBUSER }}
+            IMAGEPASS: ${{ secrets.IMAGEPASS }}
+            IMAGEUSER: ${{ secrets.IMAGEUSER }}
+            REDISPASS: ${{ secrets.REDISPASS }}
+            YOUTUBE_API_KEY: ${{secrets.YOUTUBE_API_KEY}}
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           source: ./*
           target: /home/ec2-user/testbot
-
-      - name: Start a screen in the host Machine
-        run: |
-          screen -m -S peepbot
-
-      - name: Install virtualenv and activate
-        run: |
-          python3.10 -m venv env
-          source env/bin/activate
-
-      - name: Set and export the bot environment variables
-        env:
-          BOT_TOKEN: ${{ secrets.BETATOKEN }}
-          DB_PASSWORD: ${{ secrets.DBPASSWORD }}
-          APPLICATION_ID: ${{ secrets.APPLICATION_ID }}
-          DN_NAME: ${{ secrets.DBNAME }}
-          DB_USER: ${{ secrets.DBUSER }}
-          IMAGEPASS: ${{ secrets.IMAGEPASS }}
-          IMAGEUSER: ${{ secrets.IMAGEUSER }}
-          REDISPASS: ${{ secrets.REDISPASS }}
-          YOUTUBE_API_KEY: ${{secrets.YOUTUBE_API_KEY}}
-
-        run: |
-          export BETATOKEN=$BOT_TOKEN
-          export DBPASSWORD=$DB_PASSWORD
-          export APPLICATION_ID=$APPLICATION_ID
-          export DBNAME=$DB_NAME
-          export DBUSER=$DB_USER
-          export IMAGEPASS=$IMAGEPASS
-          export IMAGEUSER=$IMAGEUSER
-          export REDISPASS=$REDISPASS
-          export YOUTUBE_API_KEY=$YOUTUBE_API_KEY
-
-      - name: Install requirements if needed and run it
-        run: |
-          pip install -r requirements.txt
-      - name: Start The bot
-        run: |
-          python3.10 runner.py
-      - name: Close The bot
-        run: |
-          screen -X -S "peepbot" quit
+          envs: BETATOKEN,DBPASSWORD,APPLICATION_ID,DBNAME,DBUSER,IMAGEPASS,IMAGEUSER,REDISPASS,YOUTUBE_API_KEY
+          script_stop: true
+          script: |
+            cd /home/ec2-user/testbot
+            screen -S peepbot
+            python3.10 -m venv env
+            source env/bin/activate
+            pip install -r requirements.txt
+            python3.10 runner.py
+            screen -X -S "peepbot" quit
