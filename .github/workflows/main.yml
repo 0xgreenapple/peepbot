@@ -22,8 +22,16 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-
       - name: Deploy to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: ./*
+          target: /home/ec2-user/testbot
+          script:
+      - name: run app
         uses: appleboy/ssh-action@v0.1.7
         env:
           BETATOKEN: ${{ secrets.BETATOKEN }}
@@ -39,8 +47,6 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: ./*
-          target: /home/ec2-user/testbot
           envs: BETATOKEN,DBPASSWORD,APPLICATION_ID,DBNAME,DBUSER,IMAGEPASS,IMAGEUSER,REDISPASS,YOUTUBE_API_KEY
           script_stop: true
           script: |
