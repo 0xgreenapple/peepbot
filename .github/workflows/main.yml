@@ -24,7 +24,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Deploy to EC2
-        uses: appleboy/scp-action@master
+        uses: appleboy/ssh-action@v0.1.7
         env:
           BETATOKEN: ${{ secrets.BETATOKEN }}
           DBPASSWORD: ${{ secrets.DBPASSWORD }}
