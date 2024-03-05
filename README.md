@@ -1,5 +1,5 @@
 # peepbot
-a custom bot made for peep discord server, that uses Postgres database and Discord Py wrapper. hosted on AWS ec2 instance
+a custom bot made for a private discord server, that uses Postgres database and Discord Py wrapper. hosted on AWS ec2 instance
 
 ## features 
 **It is capable of performing so many tasks**, and has so many features, <br>
